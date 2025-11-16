@@ -1,0 +1,9 @@
+{
+  "name": "Genesis Mobile Telemetry Suite",
+  "description": "A demonstration of a vision-augmented sensor fusion system for professional-grade vehicle telemetry, utilizing simulated data from a phone's GNSS, IMU, Barometer, and Camera, with AI-driven driver coaching.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation",
+    "microphone"
+  ]
+}

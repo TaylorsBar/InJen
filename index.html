@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Genesis Mobile Telemetry Suite</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#020617">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+      body {
+        overscroll-behavior: none;
+        background-color: #020617;
+        font-family: 'Inter', sans-serif;
+      }
+      #root::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: radial-gradient(80% 80% at 50% 120%, rgba(2, 132, 199, 0.2) 0%, rgba(2, 6, 23, 0) 100%),
+                    radial-gradient(60% 60% at 50% -30%, rgba(132, 59, 255, 0.15) 0%, rgba(2, 6, 23, 0) 100%);
+        animation: swirl 20s infinite linear;
+      }
+      @keyframes swirl {
+        from { transform: rotate(0deg) scale(1.5); }
+        to { transform: rotate(360deg) scale(1.5); }
+      }
+      .font-orbitron {
+        font-family: 'Orbitron', sans-serif;
+      }
+      .text-glow {
+        text-shadow: 0 0 5px currentColor, 0 0 10px currentColor;
+      }
+      .glass-pane {
+        background-color: rgba(15, 23, 42, 0.5); /* bg-slate-900/50 */
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+       .box-glow-cyan {
+        box-shadow: 0 0 20px rgba(56, 189, 248, 0.4), 0 0 8px rgba(56, 189, 248, 0.3);
+      }
+      .box-glow-red {
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.6), 0 0 10px rgba(239, 68, 68, 0.4);
+      }
+      .neon-glow {
+        animation: pulse-neon 3s infinite alternate;
+      }
+      @keyframes pulse-neon {
+        0% { text-shadow: 0 0 4px #0ea5e9, 0 0 8px #0ea5e9, 0 0 12px #0ea5e9; }
+        100% { text-shadow: 0 0 6px #0ea5e9, 0 0 10px #0ea5e9, 0 0 16px #0ea5e9; }
+      }
+      /* Custom scrollbar for webkit browsers */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(30, 41, 59, 0.3);
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #38bdf8;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #0ea5e9;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0"
+  }
+}
+</script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+  <body class="bg-slate-950 text-gray-100 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('SW registered: ', registration);
+          }).catch(registrationError => {
+            console.log('SW registration failed: ', registrationError);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
