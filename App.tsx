@@ -8,7 +8,7 @@ import { useTelemetry } from './hooks/useTelemetry';
 import { useVoiceCommands } from './hooks/useVoiceCommands';
 import { useRecording } from './hooks/useRecording';
 import { RunSummary } from './types';
-import { BrandLogoIcon, HistoryIcon, DashboardIcon, ChatIcon } from './components/icons';
+import { BrandLogoIcon, HistoryIcon, DashboardIcon, ChatIcon, SettingsIcon } from './components/icons';
 import { RaceMap } from './components/RaceMap';
 import { VoiceControl } from './components/VoiceControl';
 import { TranscriptOverlay } from './components/TranscriptOverlay';
@@ -16,6 +16,8 @@ import { ChatView } from './components/ChatView';
 import { FullscreenHud } from './components/FullscreenHud';
 import { RecordingControl } from './components/RecordingControl';
 import { RecordingModal } from './components/RecordingModal';
+import { ToolsModal } from './components/ToolsModal';
+import { platformService } from './services/platformService';
 
 type View = 'dashboard' | 'history' | 'chat';
 
@@ -51,16 +53,53 @@ const App: React.FC = () => {
   const [selectedRun, setSelectedRun] = useState<RunSummary | null>(null);
   const [initialChatMessage, setInitialChatMessage] = useState<string | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+
+  // Platform Utility: Wake Lock Management
+  useEffect(() => {
+    const manageWakeLock = async () => {
+      if (isRunning) {
+        await platformService.requestWakeLock();
+      } else {
+        await platformService.releaseWakeLock();
+      }
+    };
+    manageWakeLock();
+
+    // Re-acquire lock if visibility changes while running (e.g., tab switch)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isRunning) {
+        platformService.requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isRunning]);
+
 
   useEffect(() => {
     const checkOrientation = () => {
-      setIsLandscape(window.innerWidth > window.innerHeight);
+        // Prefer screen.orientation if available for robust mobile detection
+        if (window.screen && window.screen.orientation) {
+             setIsLandscape(window.screen.orientation.type.includes('landscape'));
+        } else {
+             setIsLandscape(window.innerWidth > window.innerHeight);
+        }
     };
 
     window.addEventListener('resize', checkOrientation);
+    if (window.screen && window.screen.orientation) {
+        window.screen.orientation.addEventListener('change', checkOrientation);
+    }
+    
     checkOrientation(); 
 
-    return () => window.removeEventListener('resize', checkOrientation);
+    return () => {
+        window.removeEventListener('resize', checkOrientation);
+        if (window.screen && window.screen.orientation) {
+            window.screen.orientation.removeEventListener('change', checkOrientation);
+        }
+    };
   }, []);
 
 
@@ -165,6 +204,13 @@ const App: React.FC = () => {
                   isDisabled={isMicBlocked}
                   onClick={toggleListening}
                 />
+                <button
+                    onClick={() => setShowTools(true)}
+                    className="p-2 rounded-full text-gray-400 hover:bg-slate-700/50 hover:text-white transition-colors"
+                    aria-label="System Utilities"
+                >
+                    <SettingsIcon className="w-5 h-5" />
+                </button>
             </div>
           </div>
         </header>
@@ -228,6 +274,13 @@ const App: React.FC = () => {
           videoUrl={recordedVideoUrl}
           onClose={discardRecording}
         />
+      )}
+
+      {showTools && (
+          <ToolsModal 
+            onClose={() => setShowTools(false)} 
+            runHistory={runHistory} 
+          />
       )}
     </div>
   );

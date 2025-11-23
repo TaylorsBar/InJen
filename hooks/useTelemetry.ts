@@ -2,10 +2,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { TelemetryStateObject, RunSummary, FusionTier, LapData, LapSummary } from '../types';
 import { getCoachingAdvice } from '../services/geminiService';
-import { MPS_PER_MPH, METERS_PER_MILE } from '../constants';
+import { MPS_PER_MPH, METERS_PER_MILE, GRAVITY_MS2 } from '../constants';
 import { VehiclePhysics } from '../lib/VehiclePhysics';
 import { RealtimeCoachingService } from '../services/realtimeCoachingService';
 import { LapTimingService } from '../services/lapTimingService';
+import { SensorFusionSDK } from '../lib/SensorFusionSDK';
+import { obdService, OBDData } from '../services/obdService';
 
 const TICK_RATE_MS = 50; // 20 Hz for smoother physics
 
@@ -22,6 +24,7 @@ const INITIAL_TELEMETRY: TelemetryStateObject = {
   timestamp: Date.now(),
   speed_mps: 0,
   acceleration_g: { longitudinal: 0, lateral: 0, vertical: 0 },
+  tire_loads: { fl: 1, fr: 1, rl: 1, rr: 1 },
   position: INITIAL_POSITION,
   slope_percent: 0,
   pitch_angle: 0,
@@ -30,6 +33,8 @@ const INITIAL_TELEMETRY: TelemetryStateObject = {
   fusionTier: FusionTier.TIER_4_INITIALIZING,
   rpm: 0,
   heading: 0,
+  prediction: { delta: 0, predictedLapTime: null },
+  uncertainty_m: 0
 };
 
 export const useTelemetry = () => {
@@ -42,6 +47,10 @@ export const useTelemetry = () => {
   const [isCoachEnabled, setIsCoachEnabled] = useState(false);
   const [isCoachSpeaking, setIsCoachSpeaking] = useState(false);
   const [lapData, setLapData] = useState<LapData>(INITIAL_LAP_DATA);
+  
+  // OBD State
+  const [isOBDConnected, setIsOBDConnected] = useState(false);
+  const obdDataRef = useRef<OBDData | null>(null);
 
   const intervalRef = useRef<number | null>(null);
   const currentRunDataRef = useRef<TelemetryStateObject[]>([]);
@@ -51,6 +60,12 @@ export const useTelemetry = () => {
   const physicsModelRef = useRef<VehiclePhysics>(new VehiclePhysics());
   const coachServiceRef = useRef<RealtimeCoachingService | null>(null);
   const lapTimerServiceRef = useRef<LapTimingService | null>(null);
+  const sensorFusionRef = useRef<SensorFusionSDK>(new SensorFusionSDK());
+  
+  // State for IMU derivation
+  const prevHeadingRef = useRef<number>(0);
+  const prevPitchRef = useRef<number>(0);
+  const prevSpeedRef = useRef<number>(0); // For OBD-based acceleration derivation
 
 
   useEffect(() => {
@@ -69,10 +84,17 @@ export const useTelemetry = () => {
   // Real geolocation handling
   useEffect(() => {
     if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(() => {
+      navigator.geolocation.getCurrentPosition((pos) => {
         setHasGeoPermission(true);
+        // Initialize EKF origin with Altitude if available
+        sensorFusionRef.current.init(pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0);
+        
         if (!isRunning) {
-            setTelemetryData(prev => ({...prev, fusionTier: FusionTier.TIER_1_FULL_FIDELITY}));
+            setTelemetryData(prev => ({
+                ...prev, 
+                position: { lat: pos.coords.latitude, long: pos.coords.longitude },
+                fusionTier: FusionTier.TIER_1_FULL_FIDELITY
+            }));
         }
       }, (error) => {
         if (error.code === error.PERMISSION_DENIED) {
@@ -89,15 +111,33 @@ export const useTelemetry = () => {
       if (geoWatchIdRef.current) {
         navigator.geolocation.clearWatch(geoWatchIdRef.current);
       }
+      obdService.disconnect();
     };
   }, [isRunning]);
+
+  // OBD Connection Handler
+  const connectOBD = async () => {
+      const connected = await obdService.connect();
+      setIsOBDConnected(connected);
+      if (connected) {
+          obdService.startPolling((data) => {
+              obdDataRef.current = data;
+          });
+      }
+      return connected;
+  };
+
+  const disconnectOBD = () => {
+      obdService.disconnect();
+      setIsOBDConnected(false);
+      obdDataRef.current = null;
+  }
 
 
   const clearCoaching = () => setCoaching({ advice: null, isLoading: false });
   
   const setStartFinishLine = useCallback(() => {
     lapTimerServiceRef.current?.setStartFinishLine(telemetryData.position, telemetryData.heading);
-    // Force a state update to make the line appear on the map
     setTelemetryData(prev => ({...prev}));
   }, [telemetryData]);
 
@@ -112,11 +152,15 @@ export const useTelemetry = () => {
     }
     setIsRunning(false);
     coachServiceRef.current?.stop();
+    
+    // Reset to last known state but stopped
+    const lastState = sensorFusionRef.current.getState();
     setTelemetryData(prev => ({
         ...INITIAL_TELEMETRY,
         timestamp: Date.now(),
-        position: prev.position,
-        fusionTier: hasGeoPermission ? FusionTier.TIER_1_FULL_FIDELITY : FusionTier.TIER_3_DEAD_RECKONING
+        position: { lat: lastState.position.lat, long: lastState.position.long },
+        heading: prev.heading,
+        fusionTier: lastState.tier
     }));
     setLivePath([]);
     setLapData(INITIAL_LAP_DATA);
@@ -148,77 +192,143 @@ export const useTelemetry = () => {
     currentRunLapsRef.current = [];
     lapTimerServiceRef.current?.reset();
     physicsModelRef.current.reset();
-    physicsModelRef.current.setThrottle(1); // Full throttle for the run
+    
+    if (!isOBDConnected) {
+        physicsModelRef.current.setThrottle(1); // Full throttle for simulation
+    }
+    
+    // Re-init EKF if needed
+    const currentPos = telemetryData.position;
+    sensorFusionRef.current.init(currentPos.lat, currentPos.long, 0);
+
     if(isCoachEnabled) {
       coachServiceRef.current?.start();
     }
     
-    let initialPosition = telemetryData.position;
-
      setTelemetryData({
       ...INITIAL_TELEMETRY,
       timestamp: startTimeRef.current,
       event: 'Launch Initiated',
-      position: initialPosition,
+      position: currentPos,
       fusionTier: hasGeoPermission ? FusionTier.TIER_1_FULL_FIDELITY : FusionTier.TIER_3_DEAD_RECKONING,
     });
     
     if (hasGeoPermission) {
         geoWatchIdRef.current = navigator.geolocation.watchPosition(
             (pos) => {
-                setTelemetryData(prev => ({
-                    ...prev,
-                    position: { lat: pos.coords.latitude, long: pos.coords.longitude },
-                    heading: pos.coords.heading || prev.heading,
-                    fusionTier: FusionTier.TIER_1_FULL_FIDELITY
-                }));
+                sensorFusionRef.current.updateWithGNSS(
+                    pos.coords.latitude, 
+                    pos.coords.longitude, 
+                    pos.coords.altitude || 0,
+                    pos.coords.accuracy,
+                    pos.coords.speed || 0
+                );
             },
             () => {
-                 setTelemetryData(prev => ({ ...prev, fusionTier: FusionTier.TIER_3_DEAD_RECKONING }));
+                 // Error callback
             },
             { enableHighAccuracy: true, maximumAge: 0 }
         );
     }
 
-    // A simulated heading for path generation when in dead reckoning mode
-    let simHeading = Math.random() * 360;
+    // Initialize heading simulation vars
+    let simHeading = 0;
+    prevHeadingRef.current = 0;
+    prevPitchRef.current = 0;
+    prevSpeedRef.current = 0;
 
     intervalRef.current = window.setInterval(() => {
-      const physicsState = physicsModelRef.current.update(TICK_RATE_MS);
+      const dt_ms = TICK_RATE_MS;
+      const dt_s = dt_ms / 1000.0;
+      
+      let physicsState;
+      let accelLong = 0;
+
+      if (isOBDConnected && obdDataRef.current) {
+          // --- OBD MODE ---
+          const obd = obdDataRef.current;
+          const speedMps = (obd.speed_kmh || 0) / 3.6;
+          const rpm = obd.rpm || 0;
+          
+          // Inject OBD data into physics model to update gear/rpm/speed state container
+          physicsModelRef.current.overrideState(speedMps, rpm);
+          
+          // Calculate Longitudinal G from speed derivative
+          const dv = speedMps - prevSpeedRef.current;
+          accelLong = (dv / dt_s) / GRAVITY_MS2;
+          prevSpeedRef.current = speedMps;
+
+          // Update physics model with NO simulation (false), just for derived props like loads
+          physicsState = physicsModelRef.current.update(dt_ms, false);
+          
+          // Override calculated G with our derived G
+          physicsState.acceleration_g.longitudinal = accelLong;
+
+      } else {
+          // --- SIMULATION MODE ---
+          physicsState = physicsModelRef.current.update(dt_ms, true);
+          
+          // Simulate heading change for the demo loop (Driving in circles/figure 8)
+          const headingChange = (Math.random() - 0.5) * 5 * (physicsState.speed_mps / 50);
+          simHeading = (simHeading + headingChange + 360) % 360;
+      }
+
+      
+      // Calculate angular velocities (Gyro Simulation - effectively "Soft Gyro" if using phone sensors later)
+      // Note: In a real app we would use DeviceMotion event here.
+      // For now, we simulate heading behavior or use previous simHeading
+      
+      const currentHeading = isOBDConnected ? prevHeadingRef.current : simHeading; // In OBD mode, heading assumes straight/locked unless we integrate compass
+      
+      const headingRad = currentHeading * (Math.PI / 180);
+      const pitchRad = physicsState.pitch_angle * (Math.PI / 180);
+      
+      const yawRate = (headingRad - (prevHeadingRef.current * Math.PI / 180)) / dt_s;
+      const pitchRate = (pitchRad - (prevPitchRef.current * Math.PI / 180)) / dt_s;
+      const rollRate = 0; 
+
+      prevHeadingRef.current = currentHeading;
+      prevPitchRef.current = physicsState.pitch_angle;
+
+      // EKF Prediction Step
+      const accelBody = {
+          x: physicsState.acceleration_g.longitudinal * GRAVITY_MS2, 
+          y: physicsState.acceleration_g.lateral * GRAVITY_MS2,
+          z: physicsState.acceleration_g.vertical * GRAVITY_MS2
+      };
+      
+      const gyroBody = { x: rollRate, y: pitchRate, z: yawRate };
+
+      sensorFusionRef.current.predict(dt_s, accelBody, gyroBody);
+
+      // Vision Update (Simulated or Real if we had CV)
+      // If OBD is connected, we use OBD speed as the "Vision" truth for now to stabilize GPS
+      const measurementSpeed = physicsState.speed_mps;
+      const measurementConf = isOBDConnected ? 0.99 : 0.98;
+      
+      sensorFusionRef.current.updateWithVision(measurementSpeed, measurementConf);
+
+      const fusedState = sensorFusionRef.current.getState();
 
       setTelemetryData(prevData => {
-        let newPosition = { ...prevData.position };
-        let newHeading = prevData.heading;
-
-        // If we are in dead reckoning mode, simulate position path
-        if (prevData.fusionTier === FusionTier.TIER_3_DEAD_RECKONING) {
-            const distance = physicsState.speed_mps * (TICK_RATE_MS / 1000);
-            const earthRadius = 6371000;
-            const headingChange = (Math.random() - 0.5) * 5 * (physicsState.speed_mps / 50);
-            simHeading = (simHeading + headingChange + 360) % 360;
-            newHeading = simHeading;
-
-            const headingRad = simHeading * Math.PI / 180;
-            const latRad = prevData.position.lat * Math.PI / 180;
-            const dLat = distance * Math.cos(headingRad) / earthRadius;
-            const dLon = distance * Math.sin(headingRad) / (earthRadius * Math.cos(latRad));
-
-            newPosition.lat += dLat * 180 / Math.PI;
-            newPosition.long += dLon * 180 / Math.PI;
-        }
-
         const newData: TelemetryStateObject = {
           timestamp: Date.now(),
           speed_mps: physicsState.speed_mps,
           acceleration_g: physicsState.acceleration_g,
-          position: newPosition,
+          tire_loads: physicsState.tire_loads,
+          position: { lat: fusedState.position.lat, long: fusedState.position.long },
           slope_percent: (Math.random() - 0.5) * 0.5,
-          pitch_angle: (Math.random() - 0.5) * 0.3,
+          pitch_angle: fusedState.orientation_rpy.pitch * (180 / Math.PI), 
           inferred_gear: physicsState.inferred_gear,
           event: physicsState.event,
-          fusionTier: prevData.fusionTier,
+          fusionTier: isOBDConnected ? FusionTier.TIER_1_FULL_FIDELITY : fusedState.tier, // OBD elevates confidence
           rpm: physicsState.rpm,
-          heading: newHeading
+          heading: fusedState.orientation_rpy.yaw * (180 / Math.PI),
+          prediction: {
+              delta: (Math.sin(Date.now() / 3000) * 0.5), 
+              predictedLapTime: null 
+          },
+          uncertainty_m: fusedState.uncertainty
         };
         
         coachServiceRef.current?.analyze(newData);
@@ -240,7 +350,6 @@ export const useTelemetry = () => {
     } else if (isRunning) {
       coachServiceRef.current?.start();
     } else {
-        // If not running, just toggle the state. It will be started when a run begins.
         setIsCoachEnabled(true);
     }
   }, [isCoachEnabled, isRunning]);
@@ -265,7 +374,10 @@ export const useTelemetry = () => {
       toggleRealtimeCoach,
       lapData,
       setStartFinishLine,
-      startFinishLine: lapTimerServiceRef.current?.getStartFinishLine()
+      startFinishLine: lapTimerServiceRef.current?.getStartFinishLine(),
+      connectOBD,
+      disconnectOBD,
+      isOBDConnected
   };
 };
 

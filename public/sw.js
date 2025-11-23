@@ -1,4 +1,3 @@
-
 const CACHE_NAME = 'genesis-telemetry-cache-v1';
 const urlsToCache = [
   '/',
@@ -36,13 +35,17 @@ const urlsToCache = [
   '/lib/VehiclePhysics.ts',
   '/types.ts',
   '/constants.ts',
+  '/config.ts',
   // External assets
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;500;700;900&display=swap',
   'https://cdn.plot.ly/plotly-latest.min.js',
   'https://aistudiocdn.com/react@^19.2.0',
   'https://aistudiocdn.com/react-dom@^19.2.0/client',
-  'https://aistudiocdn.com/@google/genai@^1.27.0'
+  'https://aistudiocdn.com/@google/genai@^1.27.0',
+  'https://aistudiocdn.com/react-map-gl@^7.1.7',
+  'https://aistudiocdn.com/mapbox-gl@^3.5.2',
+  'https://aistudiocdn.com/mapbox-gl@^3.5.2/mapbox-gl.css'
 ];
 
 self.addEventListener('install', event => {
