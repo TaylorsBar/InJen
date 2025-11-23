@@ -1,4 +1,3 @@
-
 import {
   VEHICLE_MASS_KG,
   DRAG_COEFFICIENT,

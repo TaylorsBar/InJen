@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { TelemetryStateObject, RunSummary, FusionTier, LapData, LapSummary } from '../types';
 import { getCoachingAdvice } from '../services/geminiService';

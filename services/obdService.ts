@@ -9,7 +9,7 @@ export interface OBDData {
 
 // --- Web Bluetooth Type Definitions ---
 
-interface BluetoothDevice extends EventTarget {
+export interface BluetoothDevice extends EventTarget {
   id: string;
   name?: string;
   gatt?: BluetoothRemoteGATTServer;
@@ -19,7 +19,7 @@ interface BluetoothDevice extends EventTarget {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
 }
 
-interface BluetoothRemoteGATTServer {
+export interface BluetoothRemoteGATTServer {
   device: BluetoothDevice;
   connected: boolean;
   connect(): Promise<BluetoothRemoteGATTServer>;
@@ -28,7 +28,7 @@ interface BluetoothRemoteGATTServer {
   getPrimaryServices(service?: BluetoothServiceUUID): Promise<BluetoothRemoteGATTService[]>;
 }
 
-interface BluetoothRemoteGATTService {
+export interface BluetoothRemoteGATTService {
   uuid: string;
   isPrimary: boolean;
   device: BluetoothDevice;
@@ -38,7 +38,7 @@ interface BluetoothRemoteGATTService {
   getIncludedServices(service?: BluetoothServiceUUID): Promise<BluetoothRemoteGATTService[]>;
 }
 
-interface BluetoothRemoteGATTCharacteristic extends EventTarget {
+export interface BluetoothRemoteGATTCharacteristic extends EventTarget {
   service: BluetoothRemoteGATTService;
   uuid: string;
   properties: BluetoothCharacteristicProperties;
@@ -54,7 +54,7 @@ interface BluetoothRemoteGATTCharacteristic extends EventTarget {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
 }
 
-interface BluetoothCharacteristicProperties {
+export interface BluetoothCharacteristicProperties {
   broadcast: boolean;
   read: boolean;
   writeWithoutResponse: boolean;
@@ -66,7 +66,7 @@ interface BluetoothCharacteristicProperties {
   writableAuxiliaries: boolean;
 }
 
-interface BluetoothRemoteGATTDescriptor {
+export interface BluetoothRemoteGATTDescriptor {
   characteristic: BluetoothRemoteGATTCharacteristic;
   uuid: string;
   value?: DataView;
@@ -74,17 +74,17 @@ interface BluetoothRemoteGATTDescriptor {
   writeValue(value: BufferSource): Promise<void>;
 }
 
-type BluetoothServiceUUID = number | string;
-type BluetoothCharacteristicUUID = number | string;
-type BluetoothDescriptorUUID = number | string;
+export type BluetoothServiceUUID = number | string;
+export type BluetoothCharacteristicUUID = number | string;
+export type BluetoothDescriptorUUID = number | string;
 
-interface RequestDeviceOptions {
+export interface RequestDeviceOptions {
   filters?: BluetoothLEScanFilter[];
   optionalServices?: BluetoothServiceUUID[];
   acceptAllDevices?: boolean;
 }
 
-interface BluetoothLEScanFilter {
+export interface BluetoothLEScanFilter {
   name?: string;
   namePrefix?: string;
   services?: BluetoothServiceUUID[];
@@ -92,7 +92,7 @@ interface BluetoothLEScanFilter {
   serviceData?: { service: BluetoothServiceUUID; dataPrefix?: BufferSource; mask?: BufferSource }[];
 }
 
-interface Bluetooth extends EventTarget {
+export interface Bluetooth extends EventTarget {
   getAvailability(): Promise<boolean>;
   requestDevice(options?: RequestDeviceOptions): Promise<BluetoothDevice>;
 }
