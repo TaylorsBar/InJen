@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { TelemetryStateObject, RunSummary, FusionTier, LapData, LapSummary } from '../types';
 import { getCoachingAdvice } from '../services/geminiService';
@@ -33,7 +34,8 @@ const INITIAL_TELEMETRY: TelemetryStateObject = {
   rpm: 0,
   heading: 0,
   prediction: { delta: 0, predictedLapTime: null },
-  uncertainty_m: 0
+  uncertainty_m: 0,
+  ekf_biases: { x: 0, y: 0, z: 0 }
 };
 
 export const useTelemetry = () => {
@@ -327,7 +329,8 @@ export const useTelemetry = () => {
               delta: (Math.sin(Date.now() / 3000) * 0.5), 
               predictedLapTime: null 
           },
-          uncertainty_m: fusedState.uncertainty
+          uncertainty_m: fusedState.uncertainty,
+          ekf_biases: fusedState.biases // IP Extraction: Pass internal biases to state
         };
         
         coachServiceRef.current?.analyze(newData);

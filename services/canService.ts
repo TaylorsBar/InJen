@@ -1,3 +1,4 @@
+
 import { OBDData, BluetoothDevice, BluetoothRemoteGATTServer, BluetoothRemoteGATTCharacteristic } from "./obdService";
 
 // UUIDs for the Custom "CartelWorx" Hardware (Serial over BLE)
@@ -135,9 +136,11 @@ class CanService {
 
     let cmd = '';
     if (useExtended) {
+        // Extended frames use 'T' and 8-character hex ID
         const idStr = id.toString(16).padStart(8, '0').toUpperCase();
         cmd = `T${idStr}${dlcStr}${dataStr}`;
     } else {
+        // Standard frames use 't' and 3-character hex ID
         const idStr = id.toString(16).padStart(3, '0').toUpperCase();
         cmd = `t${idStr}${dlcStr}${dataStr}`;
     }

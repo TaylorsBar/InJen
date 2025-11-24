@@ -141,6 +141,7 @@ interface FusedState {
   position: GeoPoint;
   velocity_local: { x: number, y: number, z: number };
   orientation_rpy: { roll: number, pitch: number, yaw: number };
+  biases: { x: number, y: number, z: number };
   uncertainty: number;
   tier: FusionTier;
 }
@@ -439,6 +440,7 @@ export class SensorFusionSDK {
             position: { lat: 0, long: 0, alt: 0 },
             velocity_local: { x: 0, y: 0, z: 0 },
             orientation_rpy: { roll: 0, pitch: 0, yaw: 0 },
+            biases: { x: 0, y: 0, z: 0 },
             uncertainty: 100,
             tier: FusionTier.TIER_4_INITIALIZING
         };
@@ -466,6 +468,11 @@ export class SensorFusionSDK {
             roll: this.x.data[6][0],
             pitch: this.x.data[7][0],
             yaw: this.x.data[8][0]
+        },
+        biases: {
+            x: this.x.data[9][0],
+            y: this.x.data[10][0],
+            z: this.x.data[11][0]
         },
         uncertainty,
         tier

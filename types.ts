@@ -37,6 +37,7 @@ export interface TelemetryStateObject {
       predictedLapTime: number | null;
   };
   uncertainty_m: number; // EKF estimated position error in meters
+  ekf_biases: { x: number; y: number; z: number }; // Estimated accelerometer biases
 }
 
 export interface LapSummary {

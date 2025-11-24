@@ -39,6 +39,16 @@ export const platformService = {
     }
   },
 
+  async exitFullscreen() {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      try {
+        await document.exitFullscreen();
+      } catch (err) {
+        console.warn('Exit fullscreen failed:', err);
+      }
+    }
+  },
+
   async requestMotionPermission(): Promise<boolean> {
     // Specific handling for iOS 13+ which requires permission for DeviceMotion
     if (typeof (window as any).DeviceMotionEvent !== 'undefined' && 
@@ -54,9 +64,15 @@ export const platformService = {
     return true; // Non-iOS devices or older browsers typically don't require this
   },
 
-  exportData(data: any, filename: string) {
+  exportData(data: any, filename: string, mimeType: string = 'application/json') {
     try {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      // If data is already a string (CSV) and mimeType is not JSON, use it directly.
+      // Otherwise stringify it.
+      const content = (mimeType === 'application/json' && typeof data !== 'string')
+        ? JSON.stringify(data, null, 2) 
+        : data;
+
+      const blob = new Blob([content], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

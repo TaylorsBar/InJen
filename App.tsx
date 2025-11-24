@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { VideoOverlay } from './components/VideoOverlay';
 import { RunHistory } from './components/RunHistory';
@@ -8,7 +8,7 @@ import { useTelemetry } from './hooks/useTelemetry';
 import { useVoiceCommands } from './hooks/useVoiceCommands';
 import { useRecording } from './hooks/useRecording';
 import { RunSummary } from './types';
-import { BrandLogoIcon, HistoryIcon, DashboardIcon, ChatIcon, SettingsIcon } from './components/icons';
+import { BrandLogoIcon, HistoryIcon, DashboardIcon, ChatIcon, SettingsIcon, HudIcon } from './components/icons';
 import { RaceMap } from './components/RaceMap';
 import { VoiceControl } from './components/VoiceControl';
 import { TranscriptOverlay } from './components/TranscriptOverlay';
@@ -53,7 +53,11 @@ const App: React.FC = () => {
   const [selectedRun, setSelectedRun] = useState<RunSummary | null>(null);
   const [initialChatMessage, setInitialChatMessage] = useState<string | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [manualOverride, setManualOverride] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  
+  // Track previous landscape state to detect natural rotation vs manual override
+  const prevIsLandscapeRef = useRef(false);
 
   // Platform Utility: Wake Lock Management
   useEffect(() => {
@@ -79,17 +83,33 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkOrientation = () => {
+        let newIsLandscape = false;
         // Prefer screen.orientation if available for robust mobile detection
         if (window.screen && window.screen.orientation) {
-             setIsLandscape(window.screen.orientation.type.includes('landscape'));
+             newIsLandscape = window.screen.orientation.type.includes('landscape');
         } else {
-             setIsLandscape(window.innerWidth > window.innerHeight);
+             // Fallback for desktops or devices without orientation API
+             newIsLandscape = window.innerWidth > window.innerHeight;
         }
+
+        setIsLandscape(newIsLandscape);
+
+        // If the physical orientation changed (e.g. rotated back to portrait), reset the manual override.
+        // This ensures the system doesn't get "stuck" in dashboard mode if the user rotates back and forth.
+        if (newIsLandscape !== prevIsLandscapeRef.current) {
+            setManualOverride(false);
+        }
+        prevIsLandscapeRef.current = newIsLandscape;
+    };
+
+    const handleOrientationChangeEvent = () => {
+         // This event only fires on devices supporting the API
+         checkOrientation();
     };
 
     window.addEventListener('resize', checkOrientation);
     if (window.screen && window.screen.orientation) {
-        window.screen.orientation.addEventListener('change', checkOrientation);
+        window.screen.orientation.addEventListener('change', handleOrientationChangeEvent);
     }
     
     checkOrientation(); 
@@ -97,9 +117,14 @@ const App: React.FC = () => {
     return () => {
         window.removeEventListener('resize', checkOrientation);
         if (window.screen && window.screen.orientation) {
-            window.screen.orientation.removeEventListener('change', checkOrientation);
+            window.screen.orientation.removeEventListener('change', handleOrientationChangeEvent);
         }
     };
+  }, []);
+
+  const handleExitHud = useCallback(async () => {
+      setManualOverride(true);
+      await platformService.exitFullscreen();
   }, []);
 
 
@@ -140,8 +165,8 @@ const App: React.FC = () => {
       setSelectedRun(null);
   }
 
-  if (isLandscape) {
-    return <FullscreenHud telemetryData={telemetryData} livePath={livePath} />;
+  if (isLandscape && !manualOverride) {
+    return <FullscreenHud telemetryData={telemetryData} livePath={livePath} onExit={handleExitHud} />;
   }
 
   return (
@@ -169,6 +194,16 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center space-x-2 glass-pane rounded-full p-1">
             <div className="flex items-center space-x-1">
+                {isLandscape && manualOverride && (
+                    <button
+                        onClick={() => setManualOverride(false)}
+                        className="p-2 rounded-full bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/40 border border-cyan-500/50 animate-pulse"
+                        aria-label="Return to HUD"
+                        title="Return to HUD"
+                    >
+                        <HudIcon className="w-5 h-5" />
+                    </button>
+                )}
                 <button
                 onClick={() => setActiveView('dashboard')}
                 className={`p-2 rounded-full transition-colors ${activeView === 'dashboard' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:bg-slate-700/50'}`}

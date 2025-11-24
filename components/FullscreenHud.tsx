@@ -3,7 +3,7 @@ import React from 'react';
 import { TelemetryStateObject, FusionTier } from '../types';
 import { MPS_PER_MPH } from '../constants';
 import { CameraFeed } from './CameraFeed';
-import { FusionIcon } from './icons';
+import { FusionIcon, DashboardIcon } from './icons';
 import { RaceMap } from './RaceMap';
 
 // --- Sub-components for the HUD ---
@@ -105,9 +105,10 @@ const RpmArcGauge: React.FC<{ rpm: number; maxRpm: number }> = ({ rpm, maxRpm })
 interface FullscreenHudProps {
   telemetryData: TelemetryStateObject;
   livePath: TelemetryStateObject[];
+  onExit: () => void;
 }
 
-export const FullscreenHud: React.FC<FullscreenHudProps> = ({ telemetryData, livePath }) => {
+export const FullscreenHud: React.FC<FullscreenHudProps> = ({ telemetryData, livePath, onExit }) => {
     const speedMph = telemetryData.speed_mps / MPS_PER_MPH;
     const miniMapPath = livePath.slice(-200);
 
@@ -118,10 +119,18 @@ export const FullscreenHud: React.FC<FullscreenHudProps> = ({ telemetryData, liv
             </div>
             <div className="absolute inset-0 p-2 text-white pointer-events-none flex flex-col justify-between">
                 {/* TOP ROW */}
-                <div className="w-full flex justify-between items-start">
-                    <FusionStatusIndicator tier={telemetryData.fusionTier} />
+                <div className="w-full flex justify-between items-start pointer-events-auto">
+                    <div className="flex items-center gap-2">
+                         <button 
+                            onClick={onExit}
+                            className="bg-slate-900/60 p-2 rounded-full border border-white/10 hover:bg-slate-800/80 transition-colors backdrop-blur-md"
+                        >
+                            <DashboardIcon className="w-5 h-5 text-gray-300" />
+                        </button>
+                        <FusionStatusIndicator tier={telemetryData.fusionTier} />
+                    </div>
                     {livePath.length > 1 && (
-                        <div className="w-40 h-28 glass-pane rounded-lg p-1 pointer-events-auto">
+                        <div className="w-40 h-28 glass-pane rounded-lg p-1">
                             <RaceMap 
                                 data={miniMapPath}
                                 currentPosition={telemetryData.position}
@@ -155,7 +164,7 @@ export const FullscreenHud: React.FC<FullscreenHudProps> = ({ telemetryData, liv
                 
                 {/* BOTTOM ROW (Exit message) */}
                  <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-center text-xs text-gray-400 bg-black/40 px-2 py-0.5 rounded-md">
-                   Rotate device to portrait to exit
+                   Rotate device to portrait or click icon to exit
                  </div>
             </div>
         </div>
