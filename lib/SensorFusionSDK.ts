@@ -302,13 +302,18 @@ export class SensorFusionSDK {
 
   /**
    * Prediction Step: Propagate state using IMU
+   * Implements Zero Velocity Update (ZUPT) if external speed is near zero.
    */
   public predict(
     dt_sec: number,
     accelBody: { x: number, y: number, z: number },
-    gyroBody: { x: number, y: number, z: number } 
+    gyroBody: { x: number, y: number, z: number },
+    externalSpeedMps?: number
   ) {
     if (!this.isInitialized()) return;
+
+    // Check for stationary condition (ZUPT)
+    const isStationary = externalSpeedMps !== undefined && Math.abs(externalSpeedMps) < 0.1;
 
     // 1. Current State
     const px=this.x.data[0][0], py=this.x.data[1][0], pz=this.x.data[2][0];
@@ -327,16 +332,26 @@ export class SensorFusionSDK {
     const ay_local = R.data[1][0]*ax_corr + R.data[1][1]*ay_corr + R.data[1][2]*az_corr;
     const az_local = R.data[2][0]*ax_corr + R.data[2][1]*ay_corr + R.data[2][2]*az_corr - this.G;
 
-    // 4. Update State (Euler Integration)
-    // Pos
-    this.x.data[0][0] += vx * dt_sec + 0.5 * ax_local * dt_sec * dt_sec;
-    this.x.data[1][0] += vy * dt_sec + 0.5 * ay_local * dt_sec * dt_sec;
-    this.x.data[2][0] += vz * dt_sec + 0.5 * az_local * dt_sec * dt_sec;
-    // Vel
-    this.x.data[3][0] += ax_local * dt_sec;
-    this.x.data[4][0] += ay_local * dt_sec;
-    this.x.data[5][0] += az_local * dt_sec;
-    // Att (Simplified rate integration)
+    // 4. Update State
+    if (isStationary) {
+        // ZUPT: Force Zero Velocity
+        this.x.data[3][0] = 0;
+        this.x.data[4][0] = 0;
+        this.x.data[5][0] = 0;
+        // Halt position integration (x_{k+1} = x_k)
+    } else {
+        // Euler Integration
+        // Pos
+        this.x.data[0][0] += vx * dt_sec + 0.5 * ax_local * dt_sec * dt_sec;
+        this.x.data[1][0] += vy * dt_sec + 0.5 * ay_local * dt_sec * dt_sec;
+        this.x.data[2][0] += vz * dt_sec + 0.5 * az_local * dt_sec * dt_sec;
+        // Vel
+        this.x.data[3][0] += ax_local * dt_sec;
+        this.x.data[4][0] += ay_local * dt_sec;
+        this.x.data[5][0] += az_local * dt_sec;
+    }
+
+    // Att (Always integrate angular rate to track orientation changes)
     this.x.data[6][0] += gyroBody.x * dt_sec;
     this.x.data[7][0] += gyroBody.y * dt_sec;
     this.x.data[8][0] += gyroBody.z * dt_sec;
@@ -348,12 +363,26 @@ export class SensorFusionSDK {
     const F = this.computeStateTransitionJacobian(dt_sec, accelBody, gyroBody);
 
     // 6. Update Covariance: P = FPF' + Q
-    // Adaptive Q based on motion
-    const motionMag = Math.sqrt(ax_corr**2 + ay_corr**2);
-    this.Q.data[3][3] = 0.01 + motionMag * 0.005; 
-    this.Q.data[4][4] = 0.01 + motionMag * 0.005;
+    const Q_step = this.Q.multiplyScalar(dt_sec);
 
-    this.P = F.multiply(this.P).multiply(F.transpose()).add(this.Q.multiplyScalar(dt_sec));
+    if (isStationary) {
+        // When stationary, we are very confident that velocity is zero.
+        // Clamp velocity covariance to prevent drift.
+        this.P.data[3][3] = 1e-4;
+        this.P.data[4][4] = 1e-4;
+        this.P.data[5][5] = 1e-4;
+        
+        // Zero out process noise for position/velocity since we are clamping them
+        Q_step.data[0][0] = 0; Q_step.data[1][1] = 0; Q_step.data[2][2] = 0;
+        Q_step.data[3][3] = 0; Q_step.data[4][4] = 0; Q_step.data[5][5] = 0;
+    } else {
+        // Adaptive Q based on motion intensity
+        const motionMag = Math.sqrt(ax_corr**2 + ay_corr**2);
+        Q_step.data[3][3] = (0.01 + motionMag * 0.005) * dt_sec; 
+        Q_step.data[4][4] = (0.01 + motionMag * 0.005) * dt_sec;
+    }
+
+    this.P = F.multiply(this.P).multiply(F.transpose()).add(Q_step);
   }
 
   /**

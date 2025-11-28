@@ -38,6 +38,11 @@ export interface TelemetryStateObject {
   };
   uncertainty_m: number; // EKF estimated position error in meters
   ekf_biases: { x: number; y: number; z: number }; // Estimated accelerometer biases
+  obd_info?: {
+      battery_voltage: number;
+      coolant_temp: number;
+      throttle_pos: number;
+  };
 }
 
 export interface LapSummary {
@@ -69,4 +74,26 @@ export interface LapData {
     currentLapTime: number;
     lastLapTime: number | null;
     bestLapTime: number | null;
+}
+
+export type ThemeId = 'cyberpunk' | 'rosso' | 'trackday' | 'synthwave' | 'stealth';
+
+export interface AppTheme {
+    id: ThemeId;
+    name: string;
+    colors: {
+        primary: string; // e.g. 'text-cyan-400'
+        secondary: string; // e.g. 'text-cyan-200'
+        accent: string; // e.g. 'text-cyan-300'
+        border: string; // e.g. 'border-cyan-500/30'
+        bg: string; // e.g. 'bg-slate-900/80'
+        glow: string; // e.g. 'box-glow-cyan'
+        button: string; // e.g. 'bg-cyan-600'
+        buttonHover: string; // e.g. 'hover:bg-cyan-500'
+        icon: string; // e.g. 'text-cyan-400'
+    };
+    backgroundStyle: {
+        type: 'nebula' | 'carbon' | 'grid' | 'solid';
+        css?: React.CSSProperties;
+    };
 }

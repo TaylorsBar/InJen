@@ -159,3 +159,45 @@ export async function getGroundedResponse(question: string, position: { lat: num
     };
   }
 }
+
+// --- Diagnostic Agent ---
+
+export async function diagnoseFaultCodes(dtcs: string[], vehicleContext: string = "Generic Performance Vehicle"): Promise<string> {
+    if (!API_KEY) return "AI Diagnosis is disabled. Check API Key.";
+
+    const model = 'gemini-1.5-pro'; // Use 1.5 Pro for complex reasoning
+
+    const prompt = `
+      You are the 'CartelWorx' Master Diagnostic AI.
+      Your Goal: Identify the root cause of vehicle faults using the provided DTCs and vehicle context.
+      
+      Input:
+      - DTCs: ${JSON.stringify(dtcs)}
+      - Vehicle Context: ${vehicleContext}
+      
+      Instructions:
+      1. ANALYZE: Correlate the DTCs. Do they point to a single system (e.g., Intake, Ignition, Sensor Circuit)?
+      2. EXPLAIN: Provide a clear, non-technical explanation of what the fault means.
+      3. RECOMMEND: suggest the most likely fix or next diagnostic step.
+      4. PARTS: If a specific part is likely failed (e.g. "O2 Sensor Bank 1"), mention it explicitly.
+      
+      Output Format:
+      Provide the response in clean Markdown. Use bolding for key terms.
+      Structure:
+      ### 🛑 Diagnosis: [Short Summary]
+      **Reasoning:** [Explanation]
+      **Next Steps:** [Actionable steps]
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { temperature: 0.4 }
+        });
+        return response.text;
+    } catch (e) {
+        console.error("Diagnosis failed", e);
+        return "Failed to generate diagnosis. Please try again.";
+    }
+}

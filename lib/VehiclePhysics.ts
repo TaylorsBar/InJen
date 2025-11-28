@@ -20,6 +20,7 @@ export class VehiclePhysics {
   speed_mps: number = 0;
   rpm: number = 0;
   gear: number = 1;
+  slope_percent: number = 0;
 
   // Internal state
   private isShifting: boolean = false;
@@ -30,6 +31,7 @@ export class VehiclePhysics {
     this.speed_mps = 0;
     this.rpm = IDLE_RPM;
     this.gear = 1;
+    this.slope_percent = 0;
     this.isShifting = false;
     this.shiftTimer = 0;
     this.throttle = 0;
@@ -118,6 +120,7 @@ export class VehiclePhysics {
       rpm: this.rpm,
       inferred_gear: this.gear,
       pitch_angle,
+      slope_percent: this.slope_percent,
       event: nextEvent,
     };
   }

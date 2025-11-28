@@ -7,8 +7,9 @@ import { CoachingModal } from './components/CoachingModal';
 import { useTelemetry } from './hooks/useTelemetry';
 import { useVoiceCommands } from './hooks/useVoiceCommands';
 import { useRecording } from './hooks/useRecording';
+import { useTheme } from './hooks/useTheme';
 import { RunSummary } from './types';
-import { BrandLogoIcon, HistoryIcon, DashboardIcon, ChatIcon, SettingsIcon, HudIcon } from './components/icons';
+import { BrandLogoIcon, HistoryIcon, DashboardIcon, ChatIcon, SettingsIcon, HudIcon, RaceDashIcon, EvoIcon } from './components/icons';
 import { RaceMap } from './components/RaceMap';
 import { VoiceControl } from './components/VoiceControl';
 import { TranscriptOverlay } from './components/TranscriptOverlay';
@@ -17,9 +18,11 @@ import { FullscreenHud } from './components/FullscreenHud';
 import { RecordingControl } from './components/RecordingControl';
 import { RecordingModal } from './components/RecordingModal';
 import { ToolsModal } from './components/ToolsModal';
+import { RaceDash } from './components/RaceDash';
+import { EvoRaceDash } from './components/EvoRaceDash';
 import { platformService } from './services/platformService';
 
-type View = 'dashboard' | 'history' | 'chat';
+type View = 'dashboard' | 'history' | 'chat' | 'racedash' | 'evodash';
 
 const App: React.FC = () => {
   const {
@@ -37,7 +40,12 @@ const App: React.FC = () => {
     lapData,
     setStartFinishLine,
     startFinishLine,
+    connectOBD,
+    disconnectOBD,
+    isOBDConnected
   } = useTelemetry();
+
+  const { theme } = useTheme();
 
   const {
       status: recordingStatus,
@@ -56,7 +64,6 @@ const App: React.FC = () => {
   const [manualOverride, setManualOverride] = useState(false);
   const [showTools, setShowTools] = useState(false);
   
-  // Track previous landscape state to detect natural rotation vs manual override
   const prevIsLandscapeRef = useRef(false);
 
   // Platform Utility: Wake Lock Management
@@ -70,7 +77,6 @@ const App: React.FC = () => {
     };
     manageWakeLock();
 
-    // Re-acquire lock if visibility changes while running (e.g., tab switch)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isRunning) {
         platformService.requestWakeLock();
@@ -84,18 +90,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const checkOrientation = () => {
         let newIsLandscape = false;
-        // Prefer screen.orientation if available for robust mobile detection
         if (window.screen && window.screen.orientation) {
              newIsLandscape = window.screen.orientation.type.includes('landscape');
         } else {
-             // Fallback for desktops or devices without orientation API
              newIsLandscape = window.innerWidth > window.innerHeight;
         }
 
         setIsLandscape(newIsLandscape);
 
-        // If the physical orientation changed (e.g. rotated back to portrait), reset the manual override.
-        // This ensures the system doesn't get "stuck" in dashboard mode if the user rotates back and forth.
         if (newIsLandscape !== prevIsLandscapeRef.current) {
             setManualOverride(false);
         }
@@ -103,7 +105,6 @@ const App: React.FC = () => {
     };
 
     const handleOrientationChangeEvent = () => {
-         // This event only fires on devices supporting the API
          checkOrientation();
     };
 
@@ -144,7 +145,7 @@ const App: React.FC = () => {
     getLatestRun: () => runHistory.length > 0 ? runHistory[runHistory.length - 1] : null,
     currentPosition: telemetryData.position,
     deleteLastRun,
-    setActiveView,
+    setActiveView: (view: any) => setActiveView(view),
     sendChatMessage: sendChatMessageAndSwitch,
   });
 
@@ -165,12 +166,50 @@ const App: React.FC = () => {
       setSelectedRun(null);
   }
 
-  if (isLandscape && !manualOverride) {
+  // --- Dynamic Background Rendering ---
+  const renderBackground = () => {
+      if (theme.backgroundStyle.type === 'carbon') {
+          return (
+              <div className="fixed inset-0 z-[-1]" style={{
+                  backgroundColor: '#111',
+                  backgroundImage: `
+                    linear-gradient(27deg, #151515 5px, transparent 5px),
+                    linear-gradient(207deg, #151515 5px, transparent 5px),
+                    linear-gradient(90deg, #1b1b1b 10px, transparent 10px),
+                    linear-gradient(90deg, #1d1d1d 10px, transparent 10px)
+                  `,
+                  backgroundSize: '20px 20px',
+                  backgroundPosition: '0 0, 10px 0, 10px -10px, 0px 10px'
+              }}></div>
+          );
+      }
+      if (theme.backgroundStyle.type === 'grid') {
+          return (
+              <div className="fixed inset-0 z-[-1] bg-purple-950/20" style={{
+                  backgroundImage: `linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                  linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)`,
+                  backgroundSize: '40px 40px',
+                  perspective: '500px',
+              }}>
+                  <div className="absolute inset-0 bg-gradient-to-t from-purple-900/50 to-transparent"></div>
+              </div>
+          );
+      }
+      if (theme.backgroundStyle.type === 'solid') {
+          return <div className="fixed inset-0 z-[-1] bg-neutral-950"></div>;
+      }
+      // Default Nebula (implemented in CSS usually, but we override here if needed, or rely on index.html default for cyberpunk)
+      return null; 
+  };
+
+  if (isLandscape && !manualOverride && activeView !== 'racedash' && activeView !== 'evodash') {
     return <FullscreenHud telemetryData={telemetryData} livePath={livePath} onExit={handleExitHud} />;
   }
 
   return (
-    <div className="h-screen bg-transparent flex flex-col items-center p-2 font-inter relative overflow-hidden">
+    <div className={`h-screen flex flex-col items-center p-2 font-inter relative overflow-hidden ${theme.colors.bg.split('/')[0]}`}>
+      {renderBackground()}
+      
       <TranscriptOverlay 
         userTranscript={voiceState.userTranscript} 
         modelTranscript={voiceState.modelTranscript} 
@@ -183,50 +222,60 @@ const App: React.FC = () => {
           </div>
       )}
       <div className="w-full max-w-7xl h-full flex flex-col relative">
+        {/* Background Video Layer for Dashboard View */}
         {activeView === 'dashboard' && (
-            <div className="absolute inset-0 z-0 rounded-lg overflow-hidden">
+            <div className="absolute inset-0 z-0 rounded-lg overflow-hidden opacity-50">
                 <VideoOverlay telemetryData={telemetryData} livePath={livePath} showHud={false} />
             </div>
         )}
+
+        {/* Header */}
         <header className="relative z-20 flex items-center justify-between p-3 w-full">
           <div className="flex items-center space-x-2">
-            <BrandLogoIcon className="w-32 h-auto -ml-1" />
+            <BrandLogoIcon className={`w-32 h-auto -ml-1 ${theme.colors.icon}`} />
           </div>
-          <div className="flex items-center space-x-2 glass-pane rounded-full p-1">
+          <div className={`flex items-center space-x-2 ${theme.colors.bg} rounded-full p-1 border ${theme.colors.border}`}>
             <div className="flex items-center space-x-1">
                 {isLandscape && manualOverride && (
                     <button
                         onClick={() => setManualOverride(false)}
-                        className="p-2 rounded-full bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/40 border border-cyan-500/50 animate-pulse"
-                        aria-label="Return to HUD"
-                        title="Return to HUD"
+                        className={`p-2 rounded-full bg-opacity-20 ${theme.colors.primary} hover:bg-opacity-40 border border-opacity-50 animate-pulse`}
                     >
                         <HudIcon className="w-5 h-5" />
                     </button>
                 )}
                 <button
                 onClick={() => setActiveView('dashboard')}
-                className={`p-2 rounded-full transition-colors ${activeView === 'dashboard' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:bg-slate-700/50'}`}
-                aria-label="Dashboard View"
+                className={`p-2 rounded-full transition-colors ${activeView === 'dashboard' ? `${theme.colors.primary} bg-white/10` : 'text-gray-400 hover:bg-white/5'}`}
                 >
                 <DashboardIcon className="w-5 h-5" />
                 </button>
+                 <button
+                onClick={() => setActiveView('racedash')}
+                className={`p-2 rounded-full transition-colors ${activeView === 'racedash' ? `${theme.colors.primary} bg-white/10` : 'text-gray-400 hover:bg-white/5'}`}
+                >
+                <RaceDashIcon className="w-5 h-5" />
+                </button>
+                <button
+                onClick={() => setActiveView('evodash')}
+                className={`p-2 rounded-full transition-colors ${activeView === 'evodash' ? `${theme.colors.primary} bg-white/10` : 'text-gray-400 hover:bg-white/5'}`}
+                >
+                <EvoIcon className="w-5 h-5" />
+                </button>
                 <button
                 onClick={() => setActiveView('history')}
-                className={`p-2 rounded-full transition-colors ${activeView === 'history' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:bg-slate-700/50'}`}
-                aria-label="Run History View"
+                className={`p-2 rounded-full transition-colors ${activeView === 'history' ? `${theme.colors.primary} bg-white/10` : 'text-gray-400 hover:bg-white/5'}`}
                 >
                 <HistoryIcon className="w-5 h-5" />
                 </button>
                  <button
                 onClick={() => setActiveView('chat')}
-                className={`p-2 rounded-full transition-colors ${activeView === 'chat' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400 hover:bg-slate-700/50'}`}
-                aria-label="AI Chat View"
+                className={`p-2 rounded-full transition-colors ${activeView === 'chat' ? `${theme.colors.primary} bg-white/10` : 'text-gray-400 hover:bg-white/5'}`}
                 >
                 <ChatIcon className="w-5 h-5" />
                 </button>
             </div>
-            <div className="flex items-center space-x-1 pl-1 border-l border-slate-600/50">
+            <div className="flex items-center space-x-1 pl-1 border-l border-white/10">
                 <RecordingControl
                     status={recordingStatus}
                     timer={recordingTimer}
@@ -241,8 +290,7 @@ const App: React.FC = () => {
                 />
                 <button
                     onClick={() => setShowTools(true)}
-                    className="p-2 rounded-full text-gray-400 hover:bg-slate-700/50 hover:text-white transition-colors"
-                    aria-label="System Utilities"
+                    className="p-2 rounded-full text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
                 >
                     <SettingsIcon className="w-5 h-5" />
                 </button>
@@ -250,7 +298,8 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-grow overflow-y-auto relative z-10 px-1 pb-2">
+        {/* Main Content Area */}
+        <main className={`flex-grow overflow-y-auto relative z-10 px-1 pb-2 ${activeView === 'racedash' || activeView === 'evodash' ? 'overflow-hidden' : ''}`}>
           {activeView === 'dashboard' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
               <div className="space-y-2">
@@ -274,12 +323,21 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
+          
+          {activeView === 'racedash' && (
+              <RaceDash telemetryData={telemetryData} lapData={lapData} />
+          )}
+
+          {activeView === 'evodash' && (
+              <EvoRaceDash telemetryData={telemetryData} />
+          )}
+
           {activeView === 'history' && <RunHistory runHistory={runHistory} onViewRun={handleViewRun} />}
           {activeView === 'chat' && <ChatView runHistory={runHistory} initialMessage={initialChatMessage} currentPosition={telemetryData.position} />}
         </main>
 
         <footer className="relative z-20 flex items-center justify-center p-3 w-full">
-          <div className="glass-pane p-2 rounded-full">
+          <div className={`${theme.colors.bg} p-2 rounded-full border ${theme.colors.border}`}>
             <button
               onClick={handleStartStop}
               className={`relative px-12 py-4 text-xl font-orbitron font-bold rounded-full transition-all duration-300 transform active:scale-95 focus:outline-none focus:ring-4 overflow-hidden
@@ -287,7 +345,7 @@ const App: React.FC = () => {
               ${
                 isRunning
                   ? 'bg-red-600/80 border border-red-400/50 text-white box-glow-red focus:ring-red-500/50'
-                  : 'bg-cyan-500/80 border border-cyan-300/50 text-white box-glow-cyan focus:ring-cyan-500/50'
+                  : `${theme.colors.button} border ${theme.colors.border} text-white ${theme.colors.glow}`
               }`}
             >
               <span className="relative z-10 text-glow tracking-wider">{isRunning ? 'STOP RUN' : 'START RUN'}</span>
@@ -314,7 +372,10 @@ const App: React.FC = () => {
       {showTools && (
           <ToolsModal 
             onClose={() => setShowTools(false)} 
-            runHistory={runHistory} 
+            runHistory={runHistory}
+            connectOBD={connectOBD}
+            disconnectOBD={disconnectOBD}
+            isOBDConnected={isOBDConnected}
           />
       )}
     </div>

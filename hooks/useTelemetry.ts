@@ -1,439 +1,326 @@
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { TelemetryStateObject, RunSummary, FusionTier, LapData, LapSummary } from '../types';
-import { getCoachingAdvice } from '../services/geminiService';
-import { MPS_PER_MPH, METERS_PER_MILE, GRAVITY_MS2 } from '../constants';
 import { VehiclePhysics } from '../lib/VehiclePhysics';
-import { RealtimeCoachingService } from '../services/realtimeCoachingService';
-import { LapTimingService } from '../services/lapTimingService';
 import { SensorFusionSDK } from '../lib/SensorFusionSDK';
+import { LapTimingService } from '../services/lapTimingService';
+import { RealtimeCoachingService } from '../services/realtimeCoachingService';
+import { getCoachingAdvice } from '../services/geminiService';
 import { obdService, OBDData } from '../services/obdService';
+import { platformService } from '../services/platformService';
 
-const TICK_RATE_MS = 50; // 20 Hz for smoother physics
-
-const INITIAL_POSITION = { lat: 37.7749, long: -122.4194 };
-
-const INITIAL_LAP_DATA: LapData = {
-    lap: 0,
-    currentLapTime: 0,
-    lastLapTime: null,
-    bestLapTime: null,
-};
-
-const INITIAL_TELEMETRY: TelemetryStateObject = {
+const INITIAL_STATE: TelemetryStateObject = {
   timestamp: Date.now(),
   speed_mps: 0,
-  acceleration_g: { longitudinal: 0, lateral: 0, vertical: 0 },
+  acceleration_g: { longitudinal: 0, lateral: 0, vertical: 1 },
   tire_loads: { fl: 1, fr: 1, rl: 1, rr: 1 },
-  position: INITIAL_POSITION,
+  position: { lat: 37.7749, long: -122.4194 }, // Default to SF
   slope_percent: 0,
   pitch_angle: 0,
   inferred_gear: 1,
   event: null,
   fusionTier: FusionTier.TIER_4_INITIALIZING,
-  rpm: 0,
+  rpm: 800,
   heading: 0,
   prediction: { delta: 0, predictedLapTime: null },
-  uncertainty_m: 0,
-  ekf_biases: { x: 0, y: 0, z: 0 }
+  uncertainty_m: 10,
+  ekf_biases: { x: 0, y: 0, z: 0 },
+  obd_info: { battery_voltage: 12.4, coolant_temp: 90, throttle_pos: 0 }
+};
+
+const INITIAL_LAP_DATA: LapData = {
+    lap: 0,
+    currentLapTime: 0,
+    lastLapTime: null,
+    bestLapTime: null
 };
 
 export const useTelemetry = () => {
-  const [isRunning, setIsRunning] = useState(false);
-  const [telemetryData, setTelemetryData] = useState<TelemetryStateObject>(INITIAL_TELEMETRY);
-  const [livePath, setLivePath] = useState<TelemetryStateObject[]>([]);
-  const [runHistory, setRunHistory] = useState<RunSummary[]>([]);
-  const [coaching, setCoaching] = useState<{ advice: string | null; isLoading: boolean }>({ advice: null, isLoading: false });
-  const [hasGeoPermission, setHasGeoPermission] = useState(false);
-  const [isCoachEnabled, setIsCoachEnabled] = useState(false);
-  const [isCoachSpeaking, setIsCoachSpeaking] = useState(false);
-  const [lapData, setLapData] = useState<LapData>(INITIAL_LAP_DATA);
-  
-  // OBD State
-  const [isOBDConnected, setIsOBDConnected] = useState(false);
-  const obdDataRef = useRef<OBDData | null>(null);
-
-  const intervalRef = useRef<number | null>(null);
-  const currentRunDataRef = useRef<TelemetryStateObject[]>([]);
-  const currentRunLapsRef = useRef<LapSummary[]>([]);
-  const startTimeRef = useRef<number>(0);
-  const geoWatchIdRef = useRef<number | null>(null);
-  const physicsModelRef = useRef<VehiclePhysics>(new VehiclePhysics());
-  const coachServiceRef = useRef<RealtimeCoachingService | null>(null);
-  const lapTimerServiceRef = useRef<LapTimingService | null>(null);
-  const sensorFusionRef = useRef<SensorFusionSDK>(new SensorFusionSDK());
-  
-  // State for IMU derivation
-  const prevHeadingRef = useRef<number>(0);
-  const prevPitchRef = useRef<number>(0);
-  const prevSpeedRef = useRef<number>(0); // For OBD-based acceleration derivation
-
-
-  useEffect(() => {
-    coachServiceRef.current = new RealtimeCoachingService({
-      onStateChange: (state) => {
-        setIsCoachEnabled(state.isEnabled);
-        setIsCoachSpeaking(state.isSpeaking);
-      }
-    });
+    const [isRunning, setIsRunning] = useState(false);
+    const [telemetryData, setTelemetryData] = useState<TelemetryStateObject>(INITIAL_STATE);
+    const [livePath, setLivePath] = useState<TelemetryStateObject[]>([]);
+    const [runHistory, setRunHistory] = useState<RunSummary[]>([]);
+    const [isCoachEnabled, setIsCoachEnabled] = useState(false);
+    const [isCoachSpeaking, setIsCoachSpeaking] = useState(false);
     
-    lapTimerServiceRef.current = new LapTimingService((lapSummary) => {
-        currentRunLapsRef.current.push(lapSummary);
+    // Coaching loading/result state
+    const [coaching, setCoaching] = useState<{ isLoading: boolean, advice: string | null, clear: () => void }>({
+        isLoading: false,
+        advice: null,
+        clear: () => setCoaching(prev => ({ ...prev, advice: null }))
     });
-  }, []);
 
-  // Real geolocation handling
-  useEffect(() => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        setHasGeoPermission(true);
-        // Initialize EKF origin with Altitude if available
-        sensorFusionRef.current.init(pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0);
+    const [lapData, setLapData] = useState<LapData>(INITIAL_LAP_DATA);
+    const [startFinishLine, setStartFinishLineState] = useState<{p1: {lat: number, long: number}, p2: {lat: number, long: number}} | null>(null);
+
+    // OBD State
+    const [isOBDConnected, setIsOBDConnected] = useState(false);
+    const obdDataRef = useRef<OBDData | null>(null);
+
+    // Services Refs
+    const physicsRef = useRef(new VehiclePhysics());
+    const fusionRef = useRef(new SensorFusionSDK());
+    const lapTimerRef = useRef<LapTimingService | null>(null);
+    const coachRef = useRef<RealtimeCoachingService | null>(null);
+    
+    // Data Accumulators for Run
+    const currentRunDataRef = useRef<TelemetryStateObject[]>([]);
+    const currentRunLapsRef = useRef<LapSummary[]>([]);
+
+    // Initialize Services
+    useEffect(() => {
+        lapTimerRef.current = new LapTimingService((lapSummary) => {
+            currentRunLapsRef.current.push(lapSummary);
+        });
+
+        coachRef.current = new RealtimeCoachingService({
+            onStateChange: (state) => {
+                // Only update speaking state to avoid re-renders on enabled toggle which is local
+                setIsCoachSpeaking(state.isSpeaking);
+            }
+        });
         
-        if (!isRunning) {
-            setTelemetryData(prev => ({
-                ...prev, 
-                position: { lat: pos.coords.latitude, long: pos.coords.longitude },
-                fusionTier: FusionTier.TIER_1_FULL_FIDELITY
-            }));
+        // Init Sensor Fusion with a default location or wait for GPS
+        if ("geolocation" in navigator) {
+             navigator.geolocation.getCurrentPosition(
+                (pos) => fusionRef.current.init(pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0),
+                (err) => console.warn("GPS Init failed", err),
+                { enableHighAccuracy: true }
+             );
         }
-      }, (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          console.warn("Geolocation permission denied.");
+
+        return () => {
+             coachRef.current?.stop();
+        };
+    }, []);
+
+    // Toggle Coach
+    const toggleRealtimeCoach = useCallback(() => {
+        if (isCoachEnabled) {
+            coachRef.current?.stop();
+            setIsCoachEnabled(false);
+        } else {
+            coachRef.current?.start();
+            setIsCoachEnabled(true);
         }
-        setHasGeoPermission(false);
-        if (!isRunning) {
-            setTelemetryData(prev => ({...prev, fusionTier: FusionTier.TIER_3_DEAD_RECKONING}));
+    }, [isCoachEnabled]);
+
+    // Set Start/Finish
+    const setStartFinishLine = useCallback(() => {
+        if (telemetryData.position && telemetryData.heading !== undefined) {
+             lapTimerRef.current?.setStartFinishLine(telemetryData.position, telemetryData.heading);
+             setStartFinishLineState(lapTimerRef.current?.getStartFinishLine() || null);
         }
-      });
-    }
-    
-    return () => {
-      if (geoWatchIdRef.current) {
-        navigator.geolocation.clearWatch(geoWatchIdRef.current);
-      }
-      obdService.disconnect();
+    }, [telemetryData]);
+
+    // OBD Connect
+    const connectOBD = async (): Promise<{ success: boolean, error?: string }> => {
+        const result = await obdService.connect();
+        setIsOBDConnected(result.success);
+        if (result.success) {
+            obdService.startPolling((data) => {
+                obdDataRef.current = data;
+            });
+        }
+        return result;
     };
-  }, [isRunning]);
-
-  // OBD Connection Handler
-  const connectOBD = async () => {
-      const connected = await obdService.connect();
-      setIsOBDConnected(connected);
-      if (connected) {
-          obdService.startPolling((data) => {
-              obdDataRef.current = data;
-          });
-      }
-      return connected;
-  };
-
-  const disconnectOBD = () => {
-      obdService.disconnect();
-      setIsOBDConnected(false);
-      obdDataRef.current = null;
-  }
-
-
-  const clearCoaching = () => setCoaching({ advice: null, isLoading: false });
-  
-  const setStartFinishLine = useCallback(() => {
-    lapTimerServiceRef.current?.setStartFinishLine(telemetryData.position, telemetryData.heading);
-    setTelemetryData(prev => ({...prev}));
-  }, [telemetryData]);
-
-  const stopRun = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    if (geoWatchIdRef.current) {
-        navigator.geolocation.clearWatch(geoWatchIdRef.current);
-        geoWatchIdRef.current = null;
-    }
-    setIsRunning(false);
-    coachServiceRef.current?.stop();
     
-    // Reset to last known state but stopped
-    const lastState = sensorFusionRef.current.getState();
-    setTelemetryData(prev => ({
-        ...INITIAL_TELEMETRY,
-        timestamp: Date.now(),
-        position: { lat: lastState.position.lat, long: lastState.position.long },
-        heading: prev.heading,
-        fusionTier: lastState.tier
-    }));
-    setLivePath([]);
-    setLapData(INITIAL_LAP_DATA);
+    const disconnectOBD = useCallback(() => {
+        obdService.disconnect();
+        setIsOBDConnected(false);
+        obdDataRef.current = null;
+    }, []);
 
-    // Process the run
-    const runData = currentRunDataRef.current;
-    if (runData.length > 2) {
-      const runSummary = processRunData(runData, currentRunLapsRef.current);
-      setCoaching({ advice: null, isLoading: true });
-      getCoachingAdvice(runSummary).then(advice => {
-        const coachedSummary = { ...runSummary, coachingAdvice: advice };
-        setRunHistory(prev => [...prev, coachedSummary]);
-        setCoaching({ advice, isLoading: false });
-      }).catch(err => {
-        console.error("Error getting coaching advice:", err);
-        const coachedSummary = { ...runSummary, coachingAdvice: "Could not get AI coaching advice due to an error." };
-        setRunHistory(prev => [...prev, coachedSummary]);
-        setCoaching({ advice: "An error occurred while getting coaching advice.", isLoading: false });
-      });
-    }
-    currentRunDataRef.current = [];
-    currentRunLapsRef.current = [];
-  }, [hasGeoPermission]);
 
-  const startRun = () => {
-    setIsRunning(true);
-    startTimeRef.current = Date.now();
-    currentRunDataRef.current = [];
-    currentRunLapsRef.current = [];
-    lapTimerServiceRef.current?.reset();
-    physicsModelRef.current.reset();
-    
-    if (!isOBDConnected) {
-        physicsModelRef.current.setThrottle(1); // Full throttle for simulation
-    }
-    
-    // Re-init EKF if needed
-    const currentPos = telemetryData.position;
-    sensorFusionRef.current.init(currentPos.lat, currentPos.long, 0);
+    // Main Loop
+    useEffect(() => {
+        let animationFrameId: number;
+        let lastTime = Date.now();
 
-    if(isCoachEnabled) {
-      coachServiceRef.current?.start();
-    }
-    
-     setTelemetryData({
-      ...INITIAL_TELEMETRY,
-      timestamp: startTimeRef.current,
-      event: 'Launch Initiated',
-      position: currentPos,
-      fusionTier: hasGeoPermission ? FusionTier.TIER_1_FULL_FIDELITY : FusionTier.TIER_3_DEAD_RECKONING,
-    });
-    
-    if (hasGeoPermission) {
-        geoWatchIdRef.current = navigator.geolocation.watchPosition(
-            (pos) => {
-                sensorFusionRef.current.updateWithGNSS(
-                    pos.coords.latitude, 
-                    pos.coords.longitude, 
-                    pos.coords.altitude || 0,
-                    pos.coords.accuracy,
-                    pos.coords.speed || 0
-                );
-            },
-            () => {
-                 // Error callback
-            },
-            { enableHighAccuracy: true, maximumAge: 0 }
-        );
-    }
+        const loop = () => {
+            const now = Date.now();
+            const dt = now - lastTime;
+            lastTime = now;
+            
+            // 1. Update Physics / OBD
+            if (isOBDConnected && obdDataRef.current) {
+                // Use OBD data
+                const obd = obdDataRef.current;
+                // Update physics state for continuity, but override values
+                // speed from kmh to mps
+                const speedMps = (obd.speed_kmh || 0) / 3.6;
+                physicsRef.current.overrideState(speedMps, obd.rpm || 0);
+            }
+            
+            // Step physics (calculates G-forces based on speed delta if not provided by IMU, or pure sim)
+            const physicsState = physicsRef.current.update(dt, !isOBDConnected); 
+            
+            // 2. Sensor Fusion (Mocking inputs for demo if no real sensors)
+            
+            // Propagate EKF
+            fusionRef.current.predict(dt / 1000, 
+                { x: physicsState.acceleration_g.longitudinal * 9.81, y: physicsState.acceleration_g.lateral * 9.81, z: physicsState.acceleration_g.vertical * 9.81 },
+                { x: 0, y: 0, z: (physicsState.acceleration_g.lateral / (physicsState.speed_mps || 1)) }, // Rough yaw rate approx
+                physicsState.speed_mps // Pass speed for ZUPT
+            );
+            
+            const fusionState = fusionRef.current.getState();
 
-    // Initialize heading simulation vars
-    let simHeading = 0;
-    prevHeadingRef.current = 0;
-    prevPitchRef.current = 0;
-    prevSpeedRef.current = 0;
+            // 3. Compose Telemetry Object
+            const state: TelemetryStateObject = {
+                timestamp: now,
+                speed_mps: physicsState.speed_mps,
+                acceleration_g: physicsState.acceleration_g,
+                tire_loads: physicsState.tire_loads,
+                position: fusionState.position, // Use fused position
+                slope_percent: physicsState.slope_percent || 0,
+                pitch_angle: physicsState.pitch_angle,
+                inferred_gear: physicsState.inferred_gear,
+                event: physicsState.event,
+                fusionTier: fusionState.tier,
+                rpm: physicsState.rpm,
+                heading: fusionState.orientation_rpy.yaw * (180/Math.PI), // rad to deg
+                prediction: { delta: 0, predictedLapTime: null }, // Placeholder
+                uncertainty_m: fusionState.uncertainty,
+                ekf_biases: fusionState.biases,
+                obd_info: isOBDConnected && obdDataRef.current ? {
+                    battery_voltage: obdDataRef.current.voltage || 12.0,
+                    coolant_temp: obdDataRef.current.coolant_temp || 90,
+                    throttle_pos: obdDataRef.current.throttle_pos || 0
+                } : undefined
+            };
 
-    intervalRef.current = window.setInterval(() => {
-      const dt_ms = TICK_RATE_MS;
-      const dt_s = dt_ms / 1000.0;
-      
-      let physicsState;
-      let accelLong = 0;
+            // 4. Update Lap Timer
+            const currentLapData = lapTimerRef.current?.updatePosition(state);
+            if (currentLapData) setLapData(currentLapData);
 
-      if (isOBDConnected && obdDataRef.current) {
-          // --- OBD MODE ---
-          const obd = obdDataRef.current;
-          const speedMps = (obd.speed_kmh || 0) / 3.6;
-          const rpm = obd.rpm || 0;
-          
-          // Inject OBD data into physics model to update gear/rpm/speed state container
-          physicsModelRef.current.overrideState(speedMps, rpm);
-          
-          // Calculate Longitudinal G from speed derivative
-          const dv = speedMps - prevSpeedRef.current;
-          accelLong = (dv / dt_s) / GRAVITY_MS2;
-          prevSpeedRef.current = speedMps;
+            // 5. Update Coaching
+            if (isCoachEnabled) {
+                coachRef.current?.analyze(state);
+            }
 
-          // Update physics model with NO simulation (false), just for derived props like loads
-          physicsState = physicsModelRef.current.update(dt_ms, false);
-          
-          // Override calculated G with our derived G
-          physicsState.acceleration_g.longitudinal = accelLong;
+            setTelemetryData(state);
 
-      } else {
-          // --- SIMULATION MODE ---
-          physicsState = physicsModelRef.current.update(dt_ms, true);
-          
-          // Simulate heading change for the demo loop (Driving in circles/figure 8)
-          const headingChange = (Math.random() - 0.5) * 5 * (physicsState.speed_mps / 50);
-          simHeading = (simHeading + headingChange + 360) % 360;
-      }
+            // 6. Record Data if Running
+            if (isRunning) {
+                currentRunDataRef.current.push(state);
+                setLivePath(prev => [...prev, state]);
+            } else {
+                // Keep live path short when not recording (just trail)
+                 setLivePath(prev => {
+                     const keep = prev.slice(-100);
+                     if (Math.random() > 0.5) return [...keep, state]; // Downsample slightly for idle visual
+                     return keep;
+                 });
+            }
 
-      
-      // Calculate angular velocities (Gyro Simulation - effectively "Soft Gyro" if using phone sensors later)
-      // Note: In a real app we would use DeviceMotion event here.
-      // For now, we simulate heading behavior or use previous simHeading
-      
-      const currentHeading = isOBDConnected ? prevHeadingRef.current : simHeading; // In OBD mode, heading assumes straight/locked unless we integrate compass
-      
-      const headingRad = currentHeading * (Math.PI / 180);
-      const pitchRad = physicsState.pitch_angle * (Math.PI / 180);
-      
-      const yawRate = (headingRad - (prevHeadingRef.current * Math.PI / 180)) / dt_s;
-      const pitchRate = (pitchRad - (prevPitchRef.current * Math.PI / 180)) / dt_s;
-      const rollRate = 0; 
+            animationFrameId = requestAnimationFrame(loop);
+        };
 
-      prevHeadingRef.current = currentHeading;
-      prevPitchRef.current = physicsState.pitch_angle;
+        animationFrameId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [isRunning, isOBDConnected, isCoachEnabled]);
 
-      // EKF Prediction Step
-      const accelBody = {
-          x: physicsState.acceleration_g.longitudinal * GRAVITY_MS2, 
-          y: physicsState.acceleration_g.lateral * GRAVITY_MS2,
-          z: physicsState.acceleration_g.vertical * GRAVITY_MS2
-      };
-      
-      const gyroBody = { x: rollRate, y: pitchRate, z: yawRate };
+    const startRun = useCallback(() => {
+        setIsRunning(true);
+        currentRunDataRef.current = [];
+        currentRunLapsRef.current = [];
+        setLivePath([]);
+        physicsRef.current.reset();
+        lapTimerRef.current?.reset();
+        // If start/finish exists, restore it to the reset timer
+        if (startFinishLine) {
+             lapTimerRef.current?.setStartFinishLine(startFinishLine.p1, 0); 
+        }
+    }, [startFinishLine]);
 
-      sensorFusionRef.current.predict(dt_s, accelBody, gyroBody);
+    const stopRun = useCallback(async () => {
+        setIsRunning(false);
+        const data = currentRunDataRef.current;
+        const laps = currentRunLapsRef.current;
+        
+        if (data.length === 0) return;
 
-      // Vision Update (Simulated or Real if we had CV)
-      // If OBD is connected, we use OBD speed as the "Vision" truth for now to stabilize GPS
-      const measurementSpeed = physicsState.speed_mps;
-      const measurementConf = isOBDConnected ? 0.99 : 0.98;
-      
-      sensorFusionRef.current.updateWithVision(measurementSpeed, measurementConf);
+        // Calculate Stats
+        let maxSpeed = 0;
+        let maxGLong = 0;
+        let zeroToSixty = null;
+        let quarterMileTime = null;
+        let quarterMileSpeed = null;
+        let startTime = data[0].timestamp;
+        let startDist = 0; // Simplified distance integration
 
-      const fusedState = sensorFusionRef.current.getState();
+        for (let i = 0; i < data.length; i++) {
+            const p = data[i];
+            const speedMph = p.speed_mps * 2.23694;
+            if (p.speed_mps > maxSpeed) maxSpeed = p.speed_mps;
+            if (p.acceleration_g.longitudinal > maxGLong) maxGLong = p.acceleration_g.longitudinal;
 
-      setTelemetryData(prevData => {
-        const newData: TelemetryStateObject = {
-          timestamp: Date.now(),
-          speed_mps: physicsState.speed_mps,
-          acceleration_g: physicsState.acceleration_g,
-          tire_loads: physicsState.tire_loads,
-          position: { lat: fusedState.position.lat, long: fusedState.position.long },
-          slope_percent: (Math.random() - 0.5) * 0.5,
-          pitch_angle: fusedState.orientation_rpy.pitch * (180 / Math.PI), 
-          inferred_gear: physicsState.inferred_gear,
-          event: physicsState.event,
-          fusionTier: isOBDConnected ? FusionTier.TIER_1_FULL_FIDELITY : fusedState.tier, // OBD elevates confidence
-          rpm: physicsState.rpm,
-          heading: fusedState.orientation_rpy.yaw * (180 / Math.PI),
-          prediction: {
-              delta: (Math.sin(Date.now() / 3000) * 0.5), 
-              predictedLapTime: null 
-          },
-          uncertainty_m: fusedState.uncertainty,
-          ekf_biases: fusedState.biases // IP Extraction: Pass internal biases to state
+            const t = (p.timestamp - startTime) / 1000;
+            
+            // 0-60
+            if (zeroToSixty === null && speedMph >= 60) {
+                zeroToSixty = t;
+            }
+
+            // Distance (Riemann sum)
+            if (i > 0) {
+                const dt = (p.timestamp - data[i-1].timestamp) / 1000;
+                startDist += p.speed_mps * dt;
+            }
+
+            // 1/4 Mile (402.34m)
+            if (quarterMileTime === null && startDist >= 402.34) {
+                quarterMileTime = t;
+                quarterMileSpeed = p.speed_mps;
+            }
+        }
+
+        const summary: RunSummary = {
+            id: Date.now().toString(),
+            date: new Date().toISOString(),
+            zeroToSixty,
+            quarterMileTime,
+            quarterMileSpeed,
+            maxSpeed,
+            maxGForce: { longitudinal: maxGLong, lateral: 0, vertical: 0 }, // Simplify for now
+            path: data.map(d => ({ lat: d.position.lat, long: d.position.long, speed_mps: d.speed_mps })),
+            fullData: data,
+            laps: laps
         };
         
-        coachServiceRef.current?.analyze(newData);
-        currentRunDataRef.current.push(newData);
-        setLivePath([...currentRunDataRef.current]);
+        // AI Analysis
+        setCoaching(prev => ({ ...prev, isLoading: true }));
+        // Add to history immediately
+        setRunHistory(prev => [...prev, summary]);
         
-        const newLapData = lapTimerServiceRef.current!.updatePosition(newData);
-        setLapData(newLapData);
-
-        return newData;
-      });
-    }, TICK_RATE_MS);
-  };
-
-  const toggleRealtimeCoach = useCallback(() => {
-    const wasEnabled = isCoachEnabled;
-    if (wasEnabled) {
-      coachServiceRef.current?.stop();
-    } else if (isRunning) {
-      coachServiceRef.current?.start();
-    } else {
-        setIsCoachEnabled(true);
-    }
-  }, [isCoachEnabled, isRunning]);
-  
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
-
-  return { 
-      isRunning, 
-      telemetryData, 
-      livePath, 
-      runHistory, 
-      setRunHistory, 
-      coaching: { ...coaching, clear: clearCoaching }, 
-      startRun, 
-      stopRun, 
-      isCoachEnabled, 
-      isCoachSpeaking, 
-      toggleRealtimeCoach,
-      lapData,
-      setStartFinishLine,
-      startFinishLine: lapTimerServiceRef.current?.getStartFinishLine(),
-      connectOBD,
-      disconnectOBD,
-      isOBDConnected
-  };
-};
-
-
-const processRunData = (runData: TelemetryStateObject[], laps: LapSummary[]): RunSummary => {
-    if (runData.length === 0) throw new Error("Cannot process empty run data");
-
-    const startTime = runData[0].timestamp;
-    let zeroToSixty: number | null = null;
-    let quarterMileTime: number | null = null;
-    let quarterMileSpeed: number | null = null;
-    let distanceMeters = 0;
-    
-    let maxSpeed = 0;
-    const maxGForce = { longitudinal: 0, lateral: 0, vertical: 0 };
-    
-    for(let i = 1; i < runData.length; i++) {
-        const prevPoint = runData[i-1];
-        const currentPoint = runData[i];
-        
-        const dt = (currentPoint.timestamp - prevPoint.timestamp) / 1000;
-        distanceMeters += prevPoint.speed_mps * dt;
-
-        // update maxes
-        if (currentPoint.speed_mps > maxSpeed) maxSpeed = currentPoint.speed_mps;
-        if (Math.abs(currentPoint.acceleration_g.longitudinal) > maxGForce.longitudinal) maxGForce.longitudinal = currentPoint.acceleration_g.longitudinal;
-        if (Math.abs(currentPoint.acceleration_g.lateral) > maxGForce.lateral) maxGForce.lateral = Math.abs(currentPoint.acceleration_g.lateral);
-
-        // 0-60
-        const sixtyMphInMps = 60 * MPS_PER_MPH;
-        if (!zeroToSixty && currentPoint.speed_mps >= sixtyMphInMps) {
-            zeroToSixty = (currentPoint.timestamp - startTime) / 1000;
+        try {
+            const advice = await getCoachingAdvice(summary);
+            // Update the run with advice
+            setRunHistory(prev => prev.map(r => r.id === summary.id ? { ...r, coachingAdvice: advice } : r));
+            setCoaching(prev => ({ ...prev, isLoading: false, advice }));
+        } catch (e) {
+            setCoaching(prev => ({ ...prev, isLoading: false }));
         }
-
-        // Quarter mile
-        const quarterMileInMeters = METERS_PER_MILE / 4;
-        if(!quarterMileTime && distanceMeters >= quarterMileInMeters) {
-            quarterMileTime = (currentPoint.timestamp - startTime) / 1000;
-            quarterMileSpeed = currentPoint.speed_mps;
-        }
-    }
-    
-    const path = runData.map(p => ({ lat: p.position.lat, long: p.position.long, speed_mps: p.speed_mps }));
+    }, []);
 
     return {
-        id: `run-${startTime}`,
-        date: new Date(startTime).toISOString(),
-        zeroToSixty,
-        quarterMileTime,
-        quarterMileSpeed,
-        maxSpeed,
-        maxGForce,
-        path,
-        fullData: runData,
-        laps,
+        isRunning,
+        telemetryData,
+        livePath,
+        runHistory,
+        coaching,
+        startRun,
+        stopRun,
+        setRunHistory,
+        isCoachEnabled,
+        isCoachSpeaking,
+        toggleRealtimeCoach,
+        lapData,
+        setStartFinishLine,
+        startFinishLine,
+        connectOBD,
+        disconnectOBD,
+        isOBDConnected
     };
 };

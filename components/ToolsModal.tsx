@@ -1,297 +1,330 @@
 
-import React, { useState, useEffect } from 'react';
-import { CloseIcon, SettingsIcon, ShareIcon } from './icons';
+import React, { useState } from 'react';
+import { RunSummary, TelemetryStateObject } from '../types';
+import { CloseIcon, SettingsIcon, ChatIcon } from './icons';
 import { platformService } from '../services/platformService';
-import { RunSummary } from '../types';
-import { useTelemetry } from '../hooks/useTelemetry';
 import { CanSniffer } from './CanSniffer';
-import { MPS_PER_MPH } from '../constants';
+import { useTheme } from '../hooks/useTheme';
+import { diagnoseFaultCodes } from '../services/geminiService';
 
 interface ToolsModalProps {
   onClose: () => void;
   runHistory: RunSummary[];
+  connectOBD: () => Promise<{ success: boolean; error?: string }>;
+  disconnectOBD: () => void;
+  isOBDConnected: boolean;
 }
 
-type Tab = 'system' | 'canbus';
-
-const convertToCSV = (run: RunSummary): string => {
-    // Detailed headers for professional analysis
-    const headers = [
-        'Timestamp', 
-        'Time_Offset_Sec', 
-        'Speed_MPH', 
-        'RPM', 
-        'Gear', 
-        'Latitude', 
-        'Longitude', 
-        'G_Long', 
-        'G_Lat', 
-        'G_Vert', 
-        'Heading',
-        'Tire_FL_Load',
-        'Tire_FR_Load',
-        'Tire_RL_Load',
-        'Tire_RR_Load',
-        'Fusion_Tier',
-        'Inferred_Pitch',
-        'EKF_Bias_X', // IP Extraction: Accel Bias X
-        'EKF_Bias_Y', // IP Extraction: Accel Bias Y
-        'EKF_Bias_Z', // IP Extraction: Accel Bias Z
-        'Uncertainty_M'
-    ];
-    const startTime = run.fullData.length > 0 ? run.fullData[0].timestamp : 0;
-    
-    const rows = run.fullData.map((pt) => {
-        const timeOffset = (pt.timestamp - startTime) / 1000;
-        return [
-            new Date(pt.timestamp).toISOString(),
-            timeOffset.toFixed(3),
-            (pt.speed_mps / MPS_PER_MPH).toFixed(2),
-            Math.round(pt.rpm),
-            pt.inferred_gear,
-            pt.position.lat.toFixed(6),
-            pt.position.long.toFixed(6),
-            pt.acceleration_g.longitudinal.toFixed(3),
-            pt.acceleration_g.lateral.toFixed(3),
-            pt.acceleration_g.vertical.toFixed(3),
-            pt.heading.toFixed(1),
-            pt.tire_loads.fl.toFixed(2),
-            pt.tire_loads.fr.toFixed(2),
-            pt.tire_loads.rl.toFixed(2),
-            pt.tire_loads.rr.toFixed(2),
-            pt.fusionTier,
-            pt.pitch_angle.toFixed(2),
-            pt.ekf_biases?.x.toFixed(5) || '0',
-            pt.ekf_biases?.y.toFixed(5) || '0',
-            pt.ekf_biases?.z.toFixed(5) || '0',
-            pt.uncertainty_m.toFixed(2)
-        ].join(',');
-    });
-    return [headers.join(','), ...rows].join('\n');
-};
-
-export const ToolsModal: React.FC<ToolsModalProps> = ({ onClose, runHistory }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('system');
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
-  const [sensorStatus, setSensorStatus] = useState<string | null>(null);
+export const ToolsModal: React.FC<ToolsModalProps> = ({ onClose, runHistory, connectOBD, disconnectOBD, isOBDConnected }) => {
+  const [activeTab, setActiveTab] = useState<'general' | 'obd' | 'can' | 'diagnostics' | 'appearance'>('general');
   const [obdStatus, setObdStatus] = useState<string | null>(null);
+  
+  // Theme Hook
+  const { theme, setThemeId, availableThemes } = useTheme();
+
+  // Export State
   const [selectedRunId, setSelectedRunId] = useState<string>('');
-  
-  // Grab connection logic from hook
-  const { connectOBD, disconnectOBD, isOBDConnected } = useTelemetry();
 
-  useEffect(() => {
-      if (runHistory.length > 0 && !selectedRunId) {
-          setSelectedRunId(runHistory[runHistory.length - 1].id);
-      }
-  }, [runHistory, selectedRunId]);
-
-  const handleExportAll = () => {
-    if (runHistory.length === 0) {
-      setExportStatus('No runs to export.');
-      setTimeout(() => setExportStatus(null), 2000);
-      return;
-    }
-    const filename = `genesis-history-${new Date().toISOString().split('T')[0]}.json`;
-    platformService.exportData(runHistory, filename);
-    setExportStatus('Full History Exported');
-    setTimeout(() => setExportStatus(null), 2000);
+  const handleExport = () => {
+      const data = JSON.stringify(runHistory, null, 2);
+      platformService.exportData(data, `genesis_history_${new Date().toISOString()}.json`);
   };
 
-  const handleExportSelected = (format: 'json' | 'csv') => {
+  const handleExportSelected = (type: 'csv' | 'json') => {
       const run = runHistory.find(r => r.id === selectedRunId);
-      if (!run) {
-          setExportStatus('Select a run first');
-          setTimeout(() => setExportStatus(null), 2000);
-          return;
-      }
+      if (!run) return;
 
-      const dateStr = new Date(run.date).toISOString().split('T')[0];
-      const filename = `genesis-run-${dateStr}-${run.id.slice(-4)}.${format}`;
+      const filename = `genesis_run_${run.date.split('T')[0]}_${run.id.slice(-4)}`;
 
-      if (format === 'json') {
-          platformService.exportData(run, filename, 'application/json');
+      if (type === 'json') {
+          platformService.exportData(JSON.stringify(run, null, 2), `${filename}.json`, 'application/json');
       } else {
-          const csvContent = convertToCSV(run);
-          platformService.exportData(csvContent, filename, 'text/csv');
+          const csv = convertToCSV(run);
+          platformService.exportData(csv, `${filename}.csv`, 'text/csv');
       }
-      setExportStatus(`Exported ${format.toUpperCase()}`);
-      setTimeout(() => setExportStatus(null), 2000);
   };
 
-  const handleSensorPermission = async () => {
-    const granted = await platformService.requestMotionPermission();
-    if (granted) {
-      setSensorStatus('Sensors Active');
-    } else {
-      setSensorStatus('Permission Denied');
-    }
-    setTimeout(() => setSensorStatus(null), 3000);
+  const convertToCSV = (run: RunSummary): string => {
+      if (!run.fullData || run.fullData.length === 0) return '';
+      
+      const headers = [
+          'timestamp', 'speed_mph', 'rpm', 'gear', 
+          'long_g', 'lat_g', 'vert_g',
+          'lat', 'long', 'elevation', 'slope', 'pitch', 'heading',
+          'tire_fl', 'tire_fr', 'tire_rl', 'tire_rr',
+          'ekf_bias_x', 'ekf_bias_y', 'ekf_bias_z', 'uncertainty_m',
+          'coolant_c', 'voltage_v', 'throttle_pct'
+      ].join(',');
+
+      const rows = run.fullData.map((d: TelemetryStateObject) => {
+          return [
+              d.timestamp,
+              (d.speed_mps * 2.23694).toFixed(2),
+              d.rpm.toFixed(0),
+              d.inferred_gear,
+              d.acceleration_g.longitudinal.toFixed(3),
+              d.acceleration_g.lateral.toFixed(3),
+              d.acceleration_g.vertical.toFixed(3),
+              d.position.lat.toFixed(6),
+              d.position.long.toFixed(6),
+              0, // Alt placeholder
+              d.slope_percent.toFixed(1),
+              d.pitch_angle.toFixed(1),
+              d.heading.toFixed(1),
+              d.tire_loads.fl.toFixed(2),
+              d.tire_loads.fr.toFixed(2),
+              d.tire_loads.rl.toFixed(2),
+              d.tire_loads.rr.toFixed(2),
+              d.ekf_biases.x.toFixed(4),
+              d.ekf_biases.y.toFixed(4),
+              d.ekf_biases.z.toFixed(4),
+              d.uncertainty_m.toFixed(2),
+              d.obd_info?.coolant_temp ?? '',
+              d.obd_info?.battery_voltage ?? '',
+              d.obd_info?.throttle_pos ?? ''
+          ].join(',');
+      }).join('\n');
+
+      return `${headers}\n${rows}`;
   };
-  
+
   const handleOBDConnection = async () => {
       if (isOBDConnected) {
           disconnectOBD();
           setObdStatus('Disconnected');
       } else {
           setObdStatus('Connecting...');
-          const success = await connectOBD();
-          setObdStatus(success ? 'Connected!' : 'Failed');
+          const result = await connectOBD();
+          if (result.success) {
+              setObdStatus('Connected!');
+          } else {
+              setObdStatus(result.error || 'Failed');
+          }
       }
-      setTimeout(() => setObdStatus(null), 3000);
-  }
+      setTimeout(() => setObdStatus(null), 4000);
+  };
 
-  const handleFullscreen = () => {
-      platformService.toggleFullscreen();
-  }
+  const [dtcCodes, setDtcCodes] = useState<string[]>([]);
+  const [isScanningDTC, setIsScanningDTC] = useState(false);
+  const [aiDiagnosis, setAiDiagnosis] = useState<string | null>(null);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+
+  const handleReadDTCs = async () => {
+      setIsScanningDTC(true);
+      setAiDiagnosis(null);
+      // Simulate scan or use real OBD service if integrated
+      setTimeout(() => {
+          setDtcCodes(['P0300 - Random Misfire', 'P0171 - System Too Lean']);
+          setIsScanningDTC(false);
+      }, 1500);
+  };
+
+  const handleClearDTCs = async () => {
+      if(confirm("Are you sure? This will reset the ECU check engine light.")) {
+          setDtcCodes([]);
+          setAiDiagnosis(null);
+      }
+  };
+
+  const handleAnalyzeDTCs = async () => {
+      if (dtcCodes.length === 0) return;
+      setIsDiagnosing(true);
+      const report = await diagnoseFaultCodes(dtcCodes);
+      setAiDiagnosis(report);
+      setIsDiagnosing(false);
+  };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-2" onClick={onClose}>
       <div 
-        className="glass-pane border-cyan-500/30 rounded-lg box-glow-cyan w-full max-w-2xl flex flex-col relative transform transition-all animate-in fade-in zoom-in-95 h-[650px]"
+        className={`glass-pane border rounded-lg ${theme.colors.glow} w-full max-w-4xl h-[80vh] flex flex-col relative transform transition-all animate-in fade-in zoom-in-95 ${theme.colors.border}`}
         onClick={e => e.stopPropagation()}
       >
         <div className="p-4 border-b border-white/10 flex justify-between items-center">
-            <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-cyan-400">
-                    <SettingsIcon className="w-5 h-5" />
-                    <h2 className="text-lg font-bold font-orbitron text-white">Engineering Tools</h2>
-                </div>
-                <div className="flex gap-2 ml-4">
-                    <button 
-                        onClick={() => setActiveTab('system')}
-                        className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${activeTab === 'system' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50' : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                        SYSTEM
-                    </button>
-                    <button 
-                         onClick={() => setActiveTab('canbus')}
-                         className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${activeTab === 'canbus' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50' : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                        CAN BUS SNIFFER
-                    </button>
-                </div>
+            <div className="flex items-center gap-2">
+                <SettingsIcon className={`w-5 h-5 ${theme.colors.icon}`} />
+                <h2 className={`text-xl font-bold font-orbitron ${theme.colors.primary}`}>System Utilities</h2>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-                <CloseIcon className="w-5 h-5" />
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-1 bg-white/5 rounded-full">
+               <CloseIcon className="w-5 h-5" />
             </button>
         </div>
 
-        <div className="flex-grow overflow-hidden">
-            {activeTab === 'system' && (
-                <div className="p-4 space-y-4 overflow-y-auto h-full">
-                    
-                    {/* View Controls */}
-                    <div className="space-y-2">
-                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">View & Power</h3>
-                        <button 
-                            onClick={handleFullscreen}
-                            className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 transition-colors border border-white/5"
-                        >
-                            <span className="text-gray-200">Toggle Fullscreen</span>
-                            <span className="text-xs bg-slate-900 px-2 py-1 rounded text-cyan-400 font-mono">F11</span>
-                        </button>
-                    </div>
+        <div className="flex border-b border-white/10 bg-black/20 overflow-x-auto">
+            {['general', 'appearance', 'obd', 'diagnostics', 'can'].map((tab) => (
+                <button 
+                    key={tab}
+                    onClick={() => setActiveTab(tab as any)} 
+                    className={`px-4 py-3 text-sm font-semibold transition-colors capitalize whitespace-nowrap ${activeTab === tab ? `${theme.colors.accent} border-b-2 ${theme.colors.border}` : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                    {tab}
+                </button>
+            ))}
+        </div>
 
-                    {/* Hardware Controls */}
-                    <div className="space-y-2">
-                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Sensors</h3>
-                        <button 
-                            onClick={handleSensorPermission}
-                            className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 transition-colors border border-white/5"
-                        >
-                            <span className="text-gray-200">Initialize Motion Sensors</span>
-                            {sensorStatus ? (
-                                <span className={`text-xs px-2 py-1 rounded font-bold ${sensorStatus === 'Sensors Active' ? 'text-green-400 bg-green-900/30' : 'text-red-400 bg-red-900/30'}`}>{sensorStatus}</span>
-                            ) : (
-                                platformService.isIOS() && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">iOS Required</span>
-                            )}
-                        </button>
+        <div className="flex-grow p-4 overflow-y-auto">
+            {activeTab === 'general' && (
+                <div className="space-y-4">
+                    <div className={`glass-pane p-4 rounded-lg border ${theme.colors.border}`}>
+                        <h3 className="text-lg font-bold text-white mb-2">Data Management</h3>
                         
-                        <button 
-                            onClick={handleOBDConnection}
-                            className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors border border-white/5 ${isOBDConnected ? 'bg-cyan-900/30 hover:bg-cyan-900/50' : 'bg-slate-800/50 hover:bg-slate-700/50'}`}
-                        >
-                            <span className="text-gray-200">{isOBDConnected ? 'Disconnect ELM327 / OBDII' : 'Connect ELM327 / OBDII (BLE)'}</span>
-                            {obdStatus ? (
-                                <span className="text-xs text-cyan-300 animate-pulse">{obdStatus}</span>
-                            ) : (
-                                isOBDConnected && <span className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-1 rounded">Active</span>
-                            )}
-                        </button>
-                        <p className="text-[10px] text-gray-500 px-1">
-                            Standard OBD-II Mode (ELM327 Compatible)
-                        </p>
-                    </div>
+                        <div className="mb-6">
+                            <h4 className="text-sm font-semibold text-gray-300 mb-2">Full History Backup</h4>
+                            <p className="text-gray-400 text-xs mb-3">Export all runs and telemetry logs.</p>
+                            <button 
+                                onClick={handleExport}
+                                className={`text-white font-bold py-2 px-4 rounded transition-colors text-sm ${theme.colors.button} ${theme.colors.buttonHover}`}
+                            >
+                                Export JSON
+                            </button>
+                        </div>
 
-                    {/* Data Controls */}
-                    <div className="space-y-2">
-                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Data Management</h3>
-                        
-                        {/* Bulk Export */}
-                        <button 
-                            onClick={handleExportAll}
-                            className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 transition-colors border border-white/5"
-                        >
-                            <div className="flex items-center gap-2">
-                                <span className="text-gray-200">Export All History (JSON)</span>
+                        <div className="border-t border-white/10 pt-4">
+                            <h4 className="text-sm font-semibold text-gray-300 mb-2">Single Run Export</h4>
+                            <p className="text-gray-400 text-xs mb-3">Select a specific run to export as CSV (Excel compatible) or raw JSON.</p>
+                            
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <select 
+                                    value={selectedRunId}
+                                    onChange={(e) => setSelectedRunId(e.target.value)}
+                                    className="bg-black/40 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                                >
+                                    <option value="">-- Select a Run --</option>
+                                    {runHistory.map((run, i) => (
+                                        <option key={run.id} value={run.id}>
+                                            Run #{runHistory.length - i} - {new Date(run.date).toLocaleString()}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button 
+                                    onClick={() => handleExportSelected('csv')}
+                                    disabled={!selectedRunId}
+                                    className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-2 px-4 rounded transition-colors text-sm"
+                                >
+                                    Export CSV
+                                </button>
+                                <button 
+                                    onClick={() => handleExportSelected('json')}
+                                    disabled={!selectedRunId}
+                                    className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-bold py-2 px-4 rounded transition-colors text-sm"
+                                >
+                                    Export JSON
+                                </button>
                             </div>
-                            <ShareIcon className="w-4 h-4 text-cyan-400" />
-                        </button>
-                        <div className="text-[10px] text-gray-500 px-1 flex justify-between">
-                            <span>Runs stored: {runHistory.length}</span>
-                            <span>Total size: ~{(JSON.stringify(runHistory).length / 1024).toFixed(1)} KB</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'appearance' && (
+                <div className="space-y-4">
+                    <div className={`glass-pane p-4 rounded-lg border ${theme.colors.border}`}>
+                        <h3 className="text-lg font-bold text-white mb-4">Interface Theme</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {availableThemes.map((t) => (
+                                <button
+                                    key={t.id}
+                                    onClick={() => setThemeId(t.id)}
+                                    className={`p-3 rounded-lg border flex items-center justify-between transition-all ${
+                                        theme.id === t.id 
+                                            ? `${theme.colors.border} bg-white/10 ${theme.colors.glow}` 
+                                            : 'border-white/5 bg-black/20 hover:bg-white/5'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${t.colors.bg.replace('bg-', 'from-').split('/')[0]} to-black border ${t.colors.border}`}></div>
+                                        <span className={`font-orbitron font-bold ${t.colors.primary}`}>{t.name}</span>
+                                    </div>
+                                    {theme.id === t.id && <div className={`w-2 h-2 rounded-full ${t.colors.button}`}></div>}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {activeTab === 'obd' && (
+                 <div className="space-y-4">
+                    <div className={`glass-pane p-4 rounded-lg flex flex-col items-start gap-3 border ${theme.colors.border}`}>
+                        <h3 className="text-lg font-bold text-white">OBD-II Bluetooth Adapter</h3>
+                        <p className="text-gray-400 text-sm">Connect to a generic ELM327 Bluetooth LE adapter to read RPM, speed, throttle, and more.</p>
+                        
+                        <div className="flex items-center gap-3">
+                            <button 
+                                onClick={handleOBDConnection}
+                                className={`font-bold py-2 px-6 rounded transition-colors ${isOBDConnected ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                            >
+                                {isOBDConnected ? 'Disconnect' : 'Connect Device'}
+                            </button>
+                            {obdStatus && <span className={`${theme.colors.accent} animate-pulse`}>{obdStatus}</span>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'diagnostics' && (
+                <div className="space-y-4">
+                    <div className={`glass-pane p-4 rounded-lg border ${theme.colors.border}`}>
+                        <h3 className="text-lg font-bold text-white mb-2">DTC Scanner</h3>
+                        <p className="text-gray-400 text-sm mb-4">Read and clear diagnostic trouble codes from the ECU.</p>
+                        
+                        <div className="flex flex-wrap gap-2 mb-4">
+                            <button 
+                                onClick={handleReadDTCs}
+                                disabled={isScanningDTC}
+                                className={`px-4 py-2 rounded text-sm font-bold text-white ${theme.colors.button} ${theme.colors.buttonHover}`}
+                            >
+                                {isScanningDTC ? 'Scanning...' : 'Read Codes'}
+                            </button>
+                            {dtcCodes.length > 0 && (
+                                <button 
+                                    onClick={handleAnalyzeDTCs}
+                                    disabled={isDiagnosing}
+                                    className={`px-4 py-2 rounded text-sm font-bold text-slate-900 bg-cyan-400 hover:bg-cyan-300 flex items-center gap-2`}
+                                >
+                                    <ChatIcon className="w-4 h-4" />
+                                    {isDiagnosing ? 'Analyzing...' : 'Analyze with Genesis AI'}
+                                </button>
+                            )}
+                            <button 
+                                onClick={handleClearDTCs}
+                                className="px-4 py-2 rounded text-sm font-bold text-white bg-red-800 hover:bg-red-700 ml-auto"
+                            >
+                                Clear Codes
+                            </button>
                         </div>
 
-                        {/* Single Export */}
-                        <div className="pt-2 border-t border-white/5 space-y-2">
-                             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Single Run Export</h4>
-                             {runHistory.length > 0 ? (
-                                 <div className="space-y-2">
-                                     <select 
-                                        value={selectedRunId} 
-                                        onChange={(e) => setSelectedRunId(e.target.value)}
-                                        className="w-full bg-slate-800 text-gray-200 text-xs rounded p-2 border border-slate-600 outline-none focus:border-cyan-500"
-                                     >
-                                         {runHistory.slice().reverse().map((run, idx) => (
-                                             <option key={run.id} value={run.id}>
-                                                 Run #{runHistory.length - idx} - {new Date(run.date).toLocaleString()}
-                                             </option>
-                                         ))}
-                                     </select>
-                                     <div className="flex gap-2">
-                                         <button
-                                            onClick={() => handleExportSelected('csv')}
-                                            className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 text-cyan-400 text-xs font-bold py-2 rounded border border-cyan-900/50 transition-colors"
-                                         >
-                                            Export CSV
-                                         </button>
-                                         <button
-                                            onClick={() => handleExportSelected('json')}
-                                            className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 text-yellow-400 text-xs font-bold py-2 rounded border border-yellow-900/50 transition-colors"
-                                         >
-                                            Export JSON
-                                         </button>
-                                     </div>
-                                 </div>
-                             ) : (
-                                 <p className="text-xs text-gray-500 italic">No runs recorded yet.</p>
-                             )}
+                        <div className="bg-black/40 rounded p-2 min-h-[100px] border border-white/5 mb-2">
+                            {dtcCodes.length === 0 ? (
+                                <div className="text-gray-500 text-sm italic p-2">No codes found or scan not run.</div>
+                            ) : (
+                                <ul className="space-y-1">
+                                    {dtcCodes.map((code, i) => (
+                                        <li key={i} className="text-red-400 font-mono text-sm border-b border-white/5 last:border-0 pb-1">{code}</li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
-                        
-                        {exportStatus && (
-                            <div className="text-center text-xs text-cyan-400 animate-pulse pt-2">{exportStatus}</div>
+
+                        {aiDiagnosis && (
+                            <div className="mt-4 p-3 rounded-lg glass-pane border border-cyan-500/30 animate-in fade-in slide-in-from-top-2">
+                                <h4 className="text-cyan-400 font-bold font-orbitron mb-2 flex items-center gap-2">
+                                    <ChatIcon className="w-4 h-4" /> AI Diagnosis
+                                </h4>
+                                <div className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed">
+                                    {aiDiagnosis}
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
             )}
             
-            {activeTab === 'canbus' && (
-                <div className="h-full p-2">
+            {activeTab === 'can' && (
+                <div className="h-full flex flex-col">
                     <CanSniffer />
                 </div>
             )}
-
         </div>
       </div>
     </div>

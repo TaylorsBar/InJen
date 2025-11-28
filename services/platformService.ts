@@ -68,7 +68,7 @@ export const platformService = {
     try {
       // If data is already a string (CSV) and mimeType is not JSON, use it directly.
       // Otherwise stringify it.
-      const content = (mimeType === 'application/json' && typeof data !== 'string')
+      const content = (typeof data !== 'string')
         ? JSON.stringify(data, null, 2) 
         : data;
 

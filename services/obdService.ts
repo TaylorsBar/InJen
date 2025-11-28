@@ -1,3 +1,4 @@
+
 export interface OBDData {
   rpm?: number;
   speed_kmh?: number;
@@ -125,10 +126,8 @@ class OBDService {
   private isConnected = false;
   private isPolling = false;
   private dataCallback: ((data: OBDData) => void) | null = null;
-  private commandQueue: string[] = [];
-  private processingQueue = false;
-  private lastResponse = '';
   private currentResolver: ((value: string) => void) | null = null;
+  private lastResponse = '';
 
   // PIDs
   private readonly PIDS = {
@@ -140,10 +139,10 @@ class OBDService {
     VOLTAGE: 'ATRV'
   };
 
-  async connect(): Promise<boolean> {
+  async connect(): Promise<{ success: boolean; error?: string }> {
     if (!navigator.bluetooth) {
       console.error("Web Bluetooth not supported");
-      return false;
+      return { success: false, error: "Bluetooth not supported in this browser" };
     }
 
     try {
@@ -171,24 +170,35 @@ class OBDService {
         }
       }
 
-      if (!service) throw new Error("No matching OBD service found.");
+      if (!service) throw new Error("No compatible OBD-II service found on device.");
 
       console.log("Getting Characteristic...");
       // Try to find a characteristic for write/notify
       for (const uuid of OBD_CHAR_UUIDS) {
           try {
-              this.characteristic = await service.getCharacteristic(uuid);
-              if (this.characteristic) break;
+              const char = await service.getCharacteristic(uuid);
+              if (char.properties.write || char.properties.writeWithoutResponse) {
+                  if (char.properties.notify || char.properties.indicate) {
+                      this.characteristic = char;
+                      break;
+                  }
+              }
           } catch (e) {
               // Char not found
           }
       }
       
       if (!this.characteristic) {
-          // Fallback: get any characteristic
+          // Fallback: iterate all characteristics to find one that supports Notify & Write
           const chars = await service.getCharacteristics();
-          if (chars.length > 0) this.characteristic = chars[0];
-          else throw new Error("No characteristics found.");
+          this.characteristic = chars.find(c => 
+              (c.properties.write || c.properties.writeWithoutResponse) && 
+              (c.properties.notify || c.properties.indicate)
+          ) || null;
+      }
+
+      if (!this.characteristic) {
+          throw new Error("No read/write characteristic found on adapter.");
       }
 
       await this.characteristic.startNotifications();
@@ -199,11 +209,11 @@ class OBDService {
       // Initialize ELM327
       await this.initializeAdapter();
       
-      return true;
-    } catch (error) {
+      return { success: true };
+    } catch (error: any) {
       console.error("Connection failed", error);
       this.disconnect();
-      return false;
+      return { success: false, error: error.message || "Connection failed" };
     }
   }
 
@@ -235,12 +245,58 @@ class OBDService {
     this.isPolling = false;
   }
 
+  async getDTCs(): Promise<string[]> {
+    if (!this.isConnected) return [];
+
+    const wasPolling = this.isPolling;
+    if (wasPolling) this.stopPolling();
+
+    // Give it a moment to clear the current poll operation
+    await new Promise(r => setTimeout(r, 100));
+
+    try {
+        const response = await this.sendCommand('03'); // Mode 03: Request DTCs
+        const codes = this.parseDTCResponse(response);
+        
+        if (wasPolling && this.dataCallback) this.startPolling(this.dataCallback);
+        return codes;
+    } catch (e) {
+        console.error("DTC Fetch Error", e);
+        if (wasPolling && this.dataCallback) this.startPolling(this.dataCallback);
+        return [];
+    }
+  }
+
+  async clearDTCs(): Promise<boolean> {
+      if (!this.isConnected) return false;
+      
+      const wasPolling = this.isPolling;
+      if (wasPolling) this.stopPolling();
+      await new Promise(r => setTimeout(r, 100));
+
+      try {
+          await this.sendCommand('04'); // Mode 04: Clear DTCs
+          if (wasPolling && this.dataCallback) this.startPolling(this.dataCallback);
+          return true;
+      } catch (e) {
+          console.error("DTC Clear Error", e);
+          if (wasPolling && this.dataCallback) this.startPolling(this.dataCallback);
+          return false;
+      }
+  }
+
   private async initializeAdapter() {
-    await this.sendCommand("ATZ"); // Reset
-    await this.sendCommand("ATE0"); // Echo Off
-    await this.sendCommand("ATL0"); // Linefeeds Off
-    await this.sendCommand("ATSP0"); // Auto Protocol
-    await this.sendCommand("0100"); // Warm up PID 0
+    // Basic ELM327 Init
+    try {
+        await this.sendCommand("ATZ"); // Reset
+        await new Promise(r => setTimeout(r, 500)); // Wait for reset
+        await this.sendCommand("ATE0"); // Echo Off
+        await this.sendCommand("ATL0"); // Linefeeds Off
+        await this.sendCommand("ATSP0"); // Auto Protocol
+        await this.sendCommand("0100"); // Warm up PID 0
+    } catch (e) {
+        console.warn("Init commands failed, attempting to continue anyway", e);
+    }
   }
 
   private async pollLoop() {
@@ -250,12 +306,14 @@ class OBDService {
             const speedRaw = await this.sendCommand(this.PIDS.SPEED);
             const throttleRaw = await this.sendCommand(this.PIDS.THROTTLE);
             const coolantRaw = await this.sendCommand(this.PIDS.COOLANT);
+            const voltageRaw = await this.sendCommand(this.PIDS.VOLTAGE);
             
             const data: OBDData = {
                 rpm: this.parseRPM(rpmRaw),
                 speed_kmh: this.parseSpeed(speedRaw),
                 throttle_pos: this.parseThrottle(throttleRaw),
-                coolant_temp: this.parseCoolant(coolantRaw)
+                coolant_temp: this.parseCoolant(coolantRaw),
+                voltage: this.parseVoltage(voltageRaw)
             };
 
             if (this.dataCallback) {
@@ -293,7 +351,7 @@ class OBDService {
                   this.currentResolver = null;
                   resolve(''); // Resolve empty to keep loop alive
               }
-          }, 1000);
+          }, 1500); // Extended timeout slightly
       });
   }
 
@@ -319,12 +377,8 @@ class OBDService {
   // --- Parsers ---
 
   private parseRPM(hex: string): number | undefined {
-    // Expected: 41 0C A B
     const bytes = this.hexToBytes(hex);
     if (bytes.length < 2) return undefined;
-    // For PID 010C, data starts at index 2 (0:41, 1:0C, 2:A, 3:B) usually, 
-    // but sometimes response is just AABB if headers off.
-    // Assuming standard response "41 0C A B"
     const relevant = this.findDataBytes(bytes, 0x0C);
     if (relevant && relevant.length >= 2) {
         return ((relevant[0] * 256) + relevant[1]) / 4;
@@ -333,7 +387,6 @@ class OBDService {
   }
 
   private parseSpeed(hex: string): number | undefined {
-      // Expected: 41 0D A
       const bytes = this.hexToBytes(hex);
       const relevant = this.findDataBytes(bytes, 0x0D);
       if (relevant && relevant.length >= 1) {
@@ -360,8 +413,60 @@ class OBDService {
       return undefined;
   }
 
+  private parseVoltage(response: string): number | undefined {
+      // ATRV returns ASCII string e.g., "12.4V"
+      const clean = response.replace(/[^0-9.]/g, '');
+      const val = parseFloat(clean);
+      return isNaN(val) ? undefined : val;
+  }
+
+  private parseDTCResponse(response: string): string[] {
+      // Response format often: 43 01 33 00 00 00 ...
+      if (response.includes("NO DATA")) return [];
+
+      const bytes = this.hexToBytes(response);
+      
+      let dataBytes = bytes;
+      if (dataBytes[0] === 0x43) {
+          dataBytes = dataBytes.slice(1);
+      } else if (dataBytes[0] === 0x41 && dataBytes[1] === 0x03) {
+          dataBytes = dataBytes.slice(2);
+      } else {
+          const idx = dataBytes.indexOf(0x43);
+          if (idx !== -1) dataBytes = dataBytes.slice(idx + 1);
+      }
+
+      const codes: string[] = [];
+      for (let i = 0; i < dataBytes.length; i += 2) {
+          if (i + 1 >= dataBytes.length) break;
+          const A = dataBytes[i];
+          const B = dataBytes[i + 1];
+          if (A === 0 && B === 0) continue;
+          
+          const dtc = this.decodeDTCBytes(A, B);
+          codes.push(dtc);
+      }
+      return [...new Set(codes)];
+  }
+
+  private decodeDTCBytes(A: number, B: number): string {
+      const typeBits = (A & 0xC0) >> 6;
+      let typeChar = 'P';
+      switch(typeBits) {
+          case 0: typeChar = 'P'; break;
+          case 1: typeChar = 'C'; break;
+          case 2: typeChar = 'B'; break;
+          case 3: typeChar = 'U'; break;
+      }
+      
+      const secondChar = (A & 0x30) >> 4;
+      const thirdChar = (A & 0x0F).toString(16).toUpperCase();
+      const lastTwo = B.toString(16).toUpperCase().padStart(2, '0');
+      
+      return `${typeChar}${secondChar}${thirdChar}${lastTwo}`;
+  }
+
   private hexToBytes(hex: string): number[] {
-      // Remove whitespace and non-hex chars
       const clean = hex.replace(/[^0-9A-Fa-f]/g, '');
       const bytes: number[] = [];
       for(let i=0; i<clean.length; i+=2) {
@@ -371,13 +476,11 @@ class OBDService {
   }
 
   private findDataBytes(bytes: number[], pid: number): number[] | null {
-      // Look for sequence 41 [PID]
       for(let i=0; i<bytes.length-1; i++) {
           if (bytes[i] === 0x41 && bytes[i+1] === pid) {
               return bytes.slice(i+2);
           }
       }
-      // If we are in "NO DATA" or error state
       return null;
   }
 }

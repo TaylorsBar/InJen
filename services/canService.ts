@@ -128,19 +128,19 @@ class CanService {
   public async sendFrame(id: number, data: number[], isExtended?: boolean) {
     if (!this.isConnected) return;
     
-    const dlcStr = data.length.toString();
-    const dataStr = data.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
-    
     // Auto-detect extended frame if not specified
     const useExtended = isExtended !== undefined ? isExtended : id > 0x7FF;
 
+    const dlcStr = data.length.toString();
+    const dataStr = data.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    
     let cmd = '';
     if (useExtended) {
-        // Extended frames use 'T' and 8-character hex ID
+        // Extended frames use 'T' and 8-character hex ID (29-bit)
         const idStr = id.toString(16).padStart(8, '0').toUpperCase();
         cmd = `T${idStr}${dlcStr}${dataStr}`;
     } else {
-        // Standard frames use 't' and 3-character hex ID
+        // Standard frames use 't' and 3-character hex ID (11-bit)
         const idStr = id.toString(16).padStart(3, '0').toUpperCase();
         cmd = `t${idStr}${dlcStr}${dataStr}`;
     }
@@ -206,6 +206,7 @@ class CanService {
       const extended = type === 'T';
       const idLen = extended ? 8 : 3;
       
+      // Validation check for line length
       if (line.length < 1 + idLen + 1) return;
 
       const idHex = line.substr(1, idLen);
