@@ -25,6 +25,7 @@ const INITIAL_STATE: TelemetryStateObject = {
   prediction: { delta: 0, predictedLapTime: null },
   uncertainty_m: 10,
   ekf_biases: { x: 0, y: 0, z: 0 },
+  ekf_gyro_biases: { x: 0, y: 0, z: 0 },
   obd_info: { battery_voltage: 12.4, coolant_temp: 90, throttle_pos: 0 }
 };
 
@@ -183,6 +184,7 @@ export const useTelemetry = () => {
                 prediction: { delta: 0, predictedLapTime: null }, // Placeholder
                 uncertainty_m: fusionState.uncertainty,
                 ekf_biases: fusionState.biases,
+                ekf_gyro_biases: fusionState.gyro_biases,
                 obd_info: isOBDConnected && obdDataRef.current ? {
                     battery_voltage: obdDataRef.current.voltage || 12.0,
                     coolant_temp: obdDataRef.current.coolant_temp || 90,

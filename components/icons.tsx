@@ -1,69 +1,62 @@
 
 import React from 'react';
 
-export const BrandLogoIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-  <svg viewBox="0 0 260 40" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <style>
-      {`
-        .injen-font { font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 32px; fill: #e5e7eb; }
-        .injen-glow {
-          filter: drop-shadow(0 0 4px #0ea5e9) drop-shadow(0 0 8px #0ea5e9);
-          animation: pulse-injen-glow 3s infinite alternate;
-        }
-        .accent-glow {
-          filter: drop-shadow(0 0 5px #38bdf8) drop-shadow(0 0 10px #38bdf8);
-        }
-        @keyframes pulse-injen-glow {
-          from { filter: drop-shadow(0 0 3px #0ea5e9) drop-shadow(0 0 6px #0ea5e9); }
-          to   { filter: drop-shadow(0 0 5px #0ea5e9) drop-shadow(0 0 12px #0ea5e9); }
-        }
-        .karapiro-font {
-          font-family: 'Inter', sans-serif;
-          font-weight: 500;
-          font-size: 7px;
-          fill: #94a3b8;
-          letter-spacing: 0.1em;
-          text-anchor: end;
-        }
-        .stagger { animation: stagger-in 0.8s ease-out both; }
-        @keyframes stagger-in {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-      `}
-    </style>
+export const KarapiroLogo: React.FC<{ className?: string }> = ({ className }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    viewBox="0 0 300 90" 
+    className={className}
+    aria-label="Karapiro Cartel Speed Shop"
+  >
     <defs>
-      <linearGradient id="AccentGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stopColor="#38bdf8" />
-        <stop offset="100%" stopColor="#0ea5e9" />
+      <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="100%">
+        <stop offset="0%" stopColor="#ffffff" />
+        <stop offset="45%" stopColor="#b0b0b0" />
+        <stop offset="50%" stopColor="#404040" />
+        <stop offset="55%" stopColor="#b0b0b0" />
+        <stop offset="100%" stopColor="#ffffff" />
       </linearGradient>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+      <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="2" dy="2" stdDeviation="2" floodColor="black" floodOpacity="0.7"/>
+      </filter>
     </defs>
 
-    <g className="injen-font injen-glow">
-      <text x="0" y="30" className="stagger" style={{animationDelay: '0.1s'}}>I</text>
-      <text x="35" y="30" className="stagger" style={{animationDelay: '0.2s'}}>N</text>
-      {/* J is custom */}
-      <text x="140" y="30" className="stagger" style={{animationDelay: '0.4s'}}>E</text>
-      <text x="175" y="30" className="stagger" style={{animationDelay: '0.5s'}}>N</text>
-    </g>
+    {/* Top text */}
+    <text x="150" y="25" textAnchor="middle" fill="#666" fontFamily="'Orbitron', sans-serif" fontSize="12" letterSpacing="8" fontWeight="bold">
+      KARAPIRO
+    </text>
+
+    {/* Main text */}
+    <text x="150" y="60" textAnchor="middle" fill="url(#chrome)" stroke="#000" strokeWidth="0.5" fontFamily="'Orbitron', sans-serif" fontSize="42" fontWeight="900" letterSpacing="-1" filter="url(#shadow)">
+      CARTEL
+    </text>
     
-    {/* Stylized J as a piston */}
-    <g transform="translate(80, 2)" className="stagger" style={{animationDelay: '0.3s'}}>
-        {/* Piston head */}
-        <rect x="0" y="0" width="48" height="10" rx="2" fill="url(#AccentGradient)" className="accent-glow" />
-        {/* Connecting rod */}
-        <path d="M 12 10 V 28 C 12 32.4 15.6 36 20 36 H 28 C 32.4 36 36 32.4 36 28 V 10 Z" fill="#475569" />
-        <path d="M 14 10 V 28 C 14 31.3 16.7 34 20 34 H 28 C 31.3 34 34 31.3 34 28 V 10 Z" fill="#64748b" />
-    </g>
+    {/* Subtext */}
+    <text x="150" y="80" textAnchor="middle" fill="#888" fontFamily="monospace" fontSize="9" letterSpacing="2" fontWeight="bold">
+      STATE HIGHWAY SPEED SHOP
+    </text>
     
-    <g transform="translate(260, 38)">
-        <text className="karapiro-font stagger" style={{animationDelay: '0.6s'}}>
-          by Karapiro Car/tel
-        </text>
-    </g>
+    {/* Racing Stripes */}
+    <rect x="20" y="40" width="20" height="4" fill="#D32F2F" transform="skewX(-20)" />
+    <rect x="45" y="40" width="10" height="4" fill="#D32F2F" transform="skewX(-20)" />
+    
+    <rect x="245" y="40" width="10" height="4" fill="#D32F2F" transform="skewX(-20)" />
+    <rect x="260" y="40" width="20" height="4" fill="#D32F2F" transform="skewX(-20)" />
+
   </svg>
 );
 
+export const KARAPIRO_CARTEL_LOGO_B64 = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgODAwIDIwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJtZXRhbEdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZmZmIiBzdG9wLW9wYWNpdHk9IjAuOCIvPjxzdG9wIG9mZnNldD0iNTAlIiBzdG9wLWNvbG9yPSIjYWFhIiBzdG9wLW9wYWNpdHk9IjEiLz48c3RvcCBvZmZzZXQ9IjUxJSIgc3RvcC1jb2xvcj0iIzU1NSIgc3RvcC1vcGFjaXR5PSIxIi8+PHN0b3Agb2ZZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzk5OSIgc3RvcC1vcGFjaXR5PSIxIi8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSJkcm9wU2hhZG93Ij48ZmVEcm9wU2hhZG93IGR4PSIyIiBkeT0iNCIgc3RkRGV2aWF0aW9uPSIyIiBmbG9vZC1jb2xvcj0iIzAwMCIgZmxvb2Qtb3BhY2l0eT0iMC41Ii8+PC9maWx0ZXI+PC9kZWZzPjxwYXRoIGQ9Ik0gMjAsMjAgSCA3ODAgTCA3NjAsMTgwIEggNDAgWiIgZmlsbD0iIzBhMGEwYSIgc3Ryb2tlPSIjMzMzIiBzdHJva2Utd2lkdGg9IjIiIC8+PHBhdGggZD0iTSA2MCw0MCBMIDc0MCw0MCIgc3Ryb2tlPSIjMjIyIiBzdHJva2Utd2lkdGg9IjEiIC8+PHBhdGggZD0iTSA2MCwxNjAgTCA3NDAsMTYwIiBzdHJva2U9IiMyMjIiIHN0cm9rZS13aWR0aD0iMSIgLz48ZyB0cmFuc2Zvcm09InNrZXdYKC0xMCkgdHJhbnNsYXRlKDUwLDEwKSI+PHRleHQgeD0iMzUwIiB5PSI2NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmb250LXNpemU9IjMwIiBmaWxsPSIjNzc3IiBsZXR0ZXItc3BhY2luZz0iMTAiPktBUkFQSVJPPC90ZXh0Pjx0ZXh0IHg9IjM1MCIgeT0iMTM1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSI5MCIgZmlsbD0idXJsKCNtZXRhbEdyYWQpIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgbGV0dGVyLXNwYWNpbmc9Ii0yIiBmaWx0ZXI9InVybCgjZHJvcFNoYWRvdykiPkNBUlRFTDwvdGV4dD48cmVjdCB4PSIxNTAiIHk9IjE0NSIgd2lkdGg9IjQwMCIgaGVpZ2h0PSI4IiBmaWxsPSIjRDMyRjJGIiByeD0iMiIgLz48L2c+PHRleHQgeD0iNDAwIiB5PSIxNzUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtd2VpZ2h0PSJib2xkIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNTU1IiBsZXR0ZXItc3BhY2luZz0iNCI+U1RBVEVISUdIV0FZU1BFRURTSE9QPC90ZXh0Pjwvc3ZnPg==';
+
+// Alias for compatibility
+export const BrandLogoIcon = KarapiroLogo;
 
 export const HistoryIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>

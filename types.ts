@@ -38,6 +38,7 @@ export interface TelemetryStateObject {
   };
   uncertainty_m: number; // EKF estimated position error in meters
   ekf_biases: { x: number; y: number; z: number }; // Estimated accelerometer biases
+  ekf_gyro_biases?: { x: number; y: number; z: number }; // Estimated gyroscope biases (15-DOF)
   obd_info?: {
       battery_voltage: number;
       coolant_temp: number;
