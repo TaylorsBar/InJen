@@ -53,7 +53,7 @@ export const KarapiroLogo: React.FC<{ className?: string }> = ({ className }) =>
   </svg>
 );
 
-export const KARAPIRO_CARTEL_LOGO_B64 = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgODAwIDIwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJtZXRhbEdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZmZmIiBzdG9wLW9wYWNpdHk9IjAuOCIvPjxzdG9wIG9mZnNldD0iNTAlIiBzdG9wLWNvbG9yPSIjYWFhIiBzdG9wLW9wYWNpdHk9IjEiLz48c3RvcCBvZmZzZXQ9IjUxJSIgc3RvcC1jb2xvcj0iIzU1NSIgc3RvcC1vcGFjaXR5PSIxIi8+PHN0b3Agb2ZZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzk5OSIgc3RvcC1vcGFjaXR5PSIxIi8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSJkcm9wU2hhZG93Ij48ZmVEcm9wU2hhZG93IGR4PSIyIiBkeT0iNCIgc3RkRGV2aWF0aW9uPSIyIiBmbG9vZC1jb2xvcj0iIzAwMCIgZmxvb2Qtb3BhY2l0eT0iMC41Ii8+PC9maWx0ZXI+PC9kZWZzPjxwYXRoIGQ9Ik0gMjAsMjAgSCA3ODAgTCA3NjAsMTgwIEggNDAgWiIgZmlsbD0iIzBhMGEwYSIgc3Ryb2tlPSIjMzMzIiBzdHJva2Utd2lkdGg9IjIiIC8+PHBhdGggZD0iTSA2MCw0MCBMIDc0MCw0MCIgc3Ryb2tlPSIjMjIyIiBzdHJva2Utd2lkdGg9IjEiIC8+PHBhdGggZD0iTSA2MCwxNjAgTCA3NDAsMTYwIiBzdHJva2U9IiMyMjIiIHN0cm9rZS13aWR0aD0iMSIgLz48ZyB0cmFuc2Zvcm09InNrZXdYKC0xMCkgdHJhbnNsYXRlKDUwLDEwKSI+PHRleHQgeD0iMzUwIiB5PSI2NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmb250LXNpemU9IjMwIiBmaWxsPSIjNzc3IiBsZXR0ZXItc3BhY2luZz0iMTAiPktBUkFQSVJPPC90ZXh0Pjx0ZXh0IHg9IjM1MCIgeT0iMTM1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSI5MCIgZmlsbD0idXJsKCNtZXRhbEdyYWQpIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgbGV0dGVyLXNwYWNpbmc9Ii0yIiBmaWx0ZXI9InVybCgjZHJvcFNoYWRvdykiPkNBUlRFTDwvdGV4dD48cmVjdCB4PSIxNTAiIHk9IjE0NSIgd2lkdGg9IjQwMCIgaGVpZ2h0PSI4IiBmaWxsPSIjRDMyRjJGIiByeD0iMiIgLz48L2c+PHRleHQgeD0iNDAwIiB5PSIxNzUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtd2VpZ2h0PSJib2xkIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNTU1IiBsZXR0ZXItc3BhY2luZz0iNCI+U1RBVEVISUdIV0FZU1BFRURTSE9QPC90ZXh0Pjwvc3ZnPg==';
+export const KARAPIRO_CARTEL_LOGO_B64 = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgODAwIDIwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJtZXRhbEdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZmZmIiBzdG9wLW9wYWNpdHk9IjAuOCIvPjxzdG9wIG9mZnNldD0iNTAlIiBzdG9wLWNvbG9yPSIjYWFhIiBzdG9wLW9wYWNpdHk9IjEiLz48c3RvcCBvZmZzZXQ9IjUxJSIgc3RvcC1jb2xvcj0iIzU1NSIgc3RvcC1vcGFjaXR5PSIxIi8+PHN0b3Agb2ZZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzk5OSIgc3RvcC1vcGFjaXR5PSIxIi8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSJkcm9wU2hhZG93Ij48ZmVEcm9wU2hhZG93IGR4PSIyIiBkeT0iNCIgc3RkRGV2aWF0aW9uPSIyIiBmbG9vZC1jb2xvcj0iIzAwMCIgZmxvb2Qtb3BhY2l0eT0iMC41Ii8+PC9maWx0ZXI+PC9kZWZzPjxwYXRoIGQ9Ik0gMjAsMjAgSCA3ODAgTCA3NjAsMTgwIEggNDAgWiIgZmlsbD0iIzBhMGEwYSIgc3Ryb2tlPSIjMzMzIiBzdHJva2Utd2lkdGg9IjIiIC8+PHBhdGggZD0iTSA2MCw0MCBMIDc0MCw0MCIgc3Ryb2tlPSIjMjIyIiBzdHJva2Utd2lkdGg9IjEiIC8+PHBhdGggZD0iTSA2MCwxNjAgTCA3NDAsMTYwIiBzdHJva2U9IiMyMjIiIHN0cm9rZS13aWR0aD0iMSIgLz48ZyB0cmFuc2Zvcm09InNrZXdYKC0xMCkgdHJhbnNsYXRlKDUwLDEwKSI+PHRleHQgeD0iMzUwIiB5PSI2NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmb250LXNpemU9IjMwIiBmaWxsPSIjNzc3IiBsZXR0ZXItc3BhY2l0eT0iMTAiPktBUkFQSVJPPC90ZXh0Pjx0ZXh0IHg9IjM1MCIgeT0iMTM1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSI5MCIgZmlsbD0idXJsKCNtZXRhbEdyYWQpIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIgbGV0dGVyLXNwYWNpbmc9Ii0yIiBmaWx0ZXI9InVybCgjZHJvcFNoYWRvdykiPkNBUlRFTDwvdGV4dD48cmVjdCB4PSIxNTAiIHk9IjE0NSIgd2lkdGg9IjQwMCIgaGVpZ2h0PSI4IiBmaWxsPSIjRDMyRjJGIiByeD0iMiIgLz48L2c+PHRleHQgeD0iNDAwIiB5PSIxNzUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtd2VpZ2h0PSJib2xkIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNTU1IiBsZXR0ZXItc3BhY2l0eT0iNCI+U1RBVEVISUdIV0FZU1BFRURTSE9QPC90ZXh0Pjwvc3ZnPg==';
 
 // Alias for compatibility
 export const BrandLogoIcon = KarapiroLogo;
@@ -217,5 +217,18 @@ export const HudIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
       <path d="M7 22H4a2 2 0 0 1-2-2v-3" />
       <path d="M12 7v10" />
       <path d="M7 12h10" />
+    </svg>
+);
+
+export const CompassIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+    </svg>
+);
+
+export const NavigationIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
     </svg>
 );

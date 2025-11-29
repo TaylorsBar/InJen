@@ -49,25 +49,35 @@ export const platformService = {
     }
   },
 
-  async requestMotionPermission(): Promise<boolean> {
-    // Specific handling for iOS 13+ which requires permission for DeviceMotion
-    if (typeof (window as any).DeviceMotionEvent !== 'undefined' && 
-        typeof (window as any).DeviceMotionEvent.requestPermission === 'function') {
+  /**
+   * Checks if the device requires explicit permission for DeviceMotion (iOS 13+).
+   */
+  requiresMotionPermission(): boolean {
+    return (
+      typeof (window as any).DeviceMotionEvent !== 'undefined' &&
+      typeof (window as any).DeviceMotionEvent.requestPermission === 'function'
+    );
+  },
+
+  /**
+   * Requests permission to access the accelerometer and gyroscope.
+   * MUST be called in response to a user gesture (e.g., click).
+   */
+  async requestMotionPermission(): Promise<'granted' | 'denied' | 'not_supported'> {
+    if (this.requiresMotionPermission()) {
       try {
         const permissionState = await (window as any).DeviceMotionEvent.requestPermission();
-        return permissionState === 'granted';
+        return permissionState;
       } catch (error) {
         console.error('Motion permission error:', error);
-        return false;
+        return 'denied';
       }
     }
-    return true; // Non-iOS devices or older browsers typically don't require this
+    return 'granted'; // Not required on non-iOS, effectively granted
   },
 
   exportData(data: any, filename: string, mimeType: string = 'application/json') {
     try {
-      // If data is already a string (CSV) and mimeType is not JSON, use it directly.
-      // Otherwise stringify it.
       const content = (typeof data !== 'string')
         ? JSON.stringify(data, null, 2) 
         : data;

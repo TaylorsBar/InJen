@@ -9,10 +9,6 @@
     ],
     "rewrites": [
       {
-        "source": "/sw.js",
-        "destination": "/public/sw.js"
-      },
-      {
         "source": "/manifest.json",
         "destination": "/public/manifest.json"
       },

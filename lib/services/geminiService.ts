@@ -27,32 +27,37 @@ export async function getCoachingAdvice(runSummary: RunSummary): Promise<string>
   
   const { zeroToSixty, quarterMileTime, quarterMileSpeed, maxGForce, fullData, laps } = runSummary;
 
-  const speedProfile = fullData.slice(0, 50).map(d => (d.speed_mps / MPS_PER_MPH).toFixed(1)).join(', ');
+  // Downsample data for the prompt to fit context comfortably while keeping high fidelity
+  const speedProfile = fullData.filter((_, i) => i % 5 === 0).slice(0, 100).map(d => (d.speed_mps / MPS_PER_MPH).toFixed(1)).join(', ');
   
   const lapSummary = laps.length > 0 
-    ? `Lap Data:\n${laps.map(l => `- Lap ${l.lapNumber}: ${formatTime(l.time)}`).join('\n')}`
-    : 'This was a point-to-point run (no laps).';
+    ? `Lap Data (Total ${laps.length}):\n${laps.map(l => `- Lap ${l.lapNumber}: ${formatTime(l.time)}`).join('\n')}`
+    : 'Session Type: Point-to-Point / Drag (No closed laps detected).';
 
   const prompt = `
-You are an expert AI driving coach for performance car enthusiasts. Your tone is knowledgeable, concise, and encouraging.
-Analyze the following performance run data and provide 2-3 actionable tips for improvement.
-Focus on launch technique, shift efficiency, maintaining traction, and lap consistency if lap data is available.
+    You are the 'Genesis' Chief Race Engineer. You are analyzing telemetry for a high-performance vehicle session.
+    Your output must be a professional, commercial-grade "Session Debrief" suitable for a driver's post-run analysis.
 
-Run Data:
-- 0-60 mph time: ${zeroToSixty ? `${zeroToSixty.toFixed(2)} seconds` : 'N/A'}
-- 1/4 mile time: ${quarterMileTime ? `${quarterMileTime.toFixed(2)} seconds` : 'N/A'}
-- 1/4 mile trap speed: ${quarterMileSpeed ? `${(quarterMileSpeed / MPS_PER_MPH).toFixed(1)} mph` : 'N/A'}
-- Max Longitudinal G-Force: ${maxGForce.longitudinal.toFixed(2)}g
-- Initial Speed Profile (first ~2.5s in MPH): ${speedProfile}
-- ${lapSummary}
+    **Session Data:**
+    - **Date:** ${new Date(runSummary.date).toLocaleString()}
+    - **0-60 mph:** ${zeroToSixty ? `${zeroToSixty.toFixed(2)}s` : 'N/A'}
+    - **1/4 Mile:** ${quarterMileTime ? `${quarterMileTime.toFixed(2)}s @ ${(quarterMileSpeed ? (quarterMileSpeed / MPS_PER_MPH).toFixed(1) : 0)} mph` : 'N/A'}
+    - **Peak G-Force:** ${maxGForce.longitudinal.toFixed(2)}g Long / ${maxGForce.lateral.toFixed(2)}g Lat
+    - **Launch Speed Profile (MPH):** [${speedProfile}]
+    - **Laps:** 
+    ${lapSummary}
 
-Based on this data, provide specific, data-driven feedback.
-- If lap times are inconsistent, comment on what could cause this (e.g., different braking points, inconsistent cornering lines).
-- If it's a drag run (no laps), focus on the launch and acceleration curve.
-- For example: "Your best lap was over a second faster than your others. This indicates you have the pace, but need to improve consistency. Looking at the map, on your fastest lap, you took a wider entry into the hairpin which allowed for a better exit speed. Try to replicate that line on every lap."
-- Or for a drag run: "Your initial launch shows a rapid jump to ${speedProfile.split(',')[5] || 'X'} mph but then the acceleration curve flattens slightly. This, combined with a max G-force of ${maxGForce.longitudinal.toFixed(2)}g, suggests some wheelspin. Try modulating the throttle more gently in the first second to maximize grip."
+    **Analysis Directives:**
+    1.  **Launch & Acceleration:** Analyze the G-Force and 0-60 time. Identify if there was wheelspin (high G drop-off) or bogging.
+    2.  **Cornering Performance:** Based on the peak lateral G (${maxGForce.lateral.toFixed(2)}g), evaluate the driver's commitment. (Reference: Street cars ~0.9g, Track cars >1.2g).
+    3.  **Consistency:** If laps exist, analyze the variance between lap times. If point-to-point, analyze the smoothness of the speed trace.
+    4.  **Actionable Feedback:** Provide 3 distinct, technical recommendations for the next run.
 
-Provide the feedback in plain text, without using markdown formatting like headers or lists.
+    **Format:**
+    Return the response in a structured, professional format using Markdown headers (###).
+    Start with an "Executive Summary".
+    Use bullet points for the recommendations.
+    Tone: Professional, Data-Driven, Encouraging.
   `;
 
   try {
@@ -60,15 +65,16 @@ Provide the feedback in plain text, without using markdown formatting like heade
       model: model,
       contents: prompt,
       config: {
-        temperature: 0.8,
+        temperature: 0.7,
+        topK: 40,
         topP: 0.95,
-        thinkingConfig: { thinkingBudget: 32768 }
+        thinkingConfig: { thinkingBudget: 16384 } // Allocate thinking budget for deep analysis
       }
     });
     return response.text;
   } catch (error) {
     console.error("Error calling Gemini API:", error);
-    return "There was an error analyzing your run data. Please try again later.";
+    return "## Analysis Unavailable\n\nUnable to generate the Race Engineer Report at this time. Please check your network connection.";
   }
 }
 
@@ -87,21 +93,16 @@ export async function getRealtimeCoachingTip(
   }));
 
   const prompt = `
-You are a world-class AI race driving coach providing real-time, ultra-low-latency feedback.
-Your response MUST be a single, short, actionable phrase, no more than 8 words.
-The user is actively driving. Be concise and clear. Do not use punctuation. Do not explain yourself.
-Analyze this JSON data representing the last 2 seconds of telemetry from a cornering maneuver. The driver just exited the corner.
+    Role: Professional Racing Coach.
+    Context: Driver just exited a corner.
+    Data: 
+    - Apex Speed: ${apexInfo.speed_mph} mph
+    - Apex Lat G: ${apexInfo.lat_g}
+    - Exit Telemetry (Last 2s): ${JSON.stringify(simplifiedSnapshot)}
 
-- telemetry_snapshot: ${JSON.stringify(simplifiedSnapshot)}
-- corner_apex: ${JSON.stringify(apexInfo)}
-
-Based on the data, provide ONE of the following types of feedback:
-1.  If lateral Gs dropped suddenly after the apex while speed was increasing, suggest smoother throttle application. Example: "Smoother on the throttle out of corners"
-2.  If the speed at the apex was very low, suggest carrying more speed. Example: "Carry more speed into the apex"
-3.  If braking Gs were very high but short, followed by coasting into the apex, suggest trail braking. Example: "Ease off the brakes more slowly"
-4.  If the telemetry looks good, provide encouragement. Example: "Good exit speed nice and smooth"
-
-Provide only the spoken phrase.
+    Task: Provide a SINGLE, short, spoken command (max 6 words) to improve the next corner.
+    Examples: "Get on throttle earlier", "Brake later next time", "Smooth steering input", "Good exit speed".
+    Output: Text string only. No punctuation.
 `;
 
   try {
@@ -109,13 +110,14 @@ Provide only the spoken phrase.
       model: model,
       contents: prompt,
       config: {
-        temperature: 0.7,
+        temperature: 0.6,
+        maxOutputTokens: 20,
       }
     });
     return response.text.trim();
   } catch (error) {
     console.error("Error calling Gemini API for real-time tip:", error);
-    return ""; // Return empty on error to not interrupt driver
+    return "";
   }
 }
 
@@ -165,10 +167,11 @@ export async function getGroundedResponse(question: string, position: { lat: num
 export async function diagnoseFaultCodes(dtcs: string[], vehicleContext: string = "Generic Performance Vehicle"): Promise<string> {
     if (!API_KEY) return "AI Diagnosis is disabled. Check API Key.";
 
-    const model = 'gemini-3-pro-preview';
+    // Using Gemini 3 Pro for complex causal reasoning of mechanical faults
+    const model = 'gemini-3-pro-preview'; 
 
     const prompt = `
-      You are the 'CartelWorx' Master Diagnostic AI.
+      You are the 'Genesis' Master Diagnostic AI.
       Your Goal: Identify the root cause of vehicle faults using the provided DTCs and vehicle context.
       
       Input:
@@ -194,8 +197,8 @@ export async function diagnoseFaultCodes(dtcs: string[], vehicleContext: string 
             model: model,
             contents: prompt,
             config: { 
-                temperature: 0.7,
-                thinkingConfig: { thinkingBudget: 32768 }
+                temperature: 0.4,
+                thinkingConfig: { thinkingBudget: 16384 } 
             }
         });
         return response.text;

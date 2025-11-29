@@ -1,9 +1,10 @@
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Map, { Source, Layer, Marker, MapRef } from 'react-map-gl';
 import type { FeatureCollection } from 'geojson';
 import { TelemetryStateObject } from '../types';
 import { MPS_PER_MPH } from '../constants';
-import { FollowIcon, FlagIcon } from './icons';
+import { FollowIcon, FlagIcon, CompassIcon, NavigationIcon } from './icons';
 import { MAPBOX_ACCESS_TOKEN } from '../config';
 
 type Position = { lat: number; long: number };
@@ -17,22 +18,20 @@ interface RaceMapProps {
 }
 
 type MapStyle = 'telemetry' | 'street' | 'satellite';
+type ViewMode = 'free' | 'follow' | 'cockpit';
 
 const styleConfig: Record<MapStyle, { bg: string; name: string; textColor: string; roadColor?: string; gridColor: string, mapboxStyle?: string }> = {
     telemetry: { bg: 'bg-slate-800/50', name: 'Telemetry', textColor: 'text-gray-500', gridColor: 'rgba(56, 189, 248, 0.1)' },
-    street: { bg: 'bg-slate-300', name: 'Street', textColor: 'text-slate-600', roadColor: '#a1a1aa', gridColor: 'rgba(0, 0, 0, 0.1)', mapboxStyle: 'mapbox://styles/mapbox/streets-v12'},
+    street: { bg: 'bg-slate-300', name: 'Street', textColor: 'text-slate-600', roadColor: '#a1a1aa', gridColor: 'rgba(0, 0, 0, 0.1)', mapboxStyle: 'mapbox://styles/mapbox/dark-v11'},
     satellite: { bg: 'bg-emerald-900', name: 'Satellite', textColor: 'text-emerald-300', gridColor: 'rgba(255, 255, 255, 0.1)', mapboxStyle: 'mapbox://styles/mapbox/satellite-streets-v12'},
 };
 
 // --- Sub-components for clarity ---
 
-const SvgMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'>> = ({ data, currentPosition, showControls, startFinishLine }) => {
-    const [isFollowing, setIsFollowing] = useState(true);
+const SvgMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'> & { heading?: number }> = ({ data, currentPosition, showControls, startFinishLine, heading = 0 }) => {
     const [selectedPoint, setSelectedPoint] = useState<TelemetryStateObject | null>(null);
     const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
     const svgRef = useRef<SVGSVGElement>(null);
-
-    const handlePointerDown = () => setIsFollowing(false);
   
     const handleMapClick = (e: React.MouseEvent<SVGSVGElement>) => {
         if (!svgRef.current || !data.every(d => d.acceleration_g)) return;
@@ -77,15 +76,11 @@ const SvgMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'>> = (
     const maxRange = Math.max(latRange, longRange);
     const padding = maxRange > 0 ? maxRange * 0.1 : 0.0002;
     
-    let centerLat = (minLat + maxLat) / 2;
-    let centerLong = (minLong + maxLong) / 2;
+    // Auto-center (simplified for SVG)
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLong = (minLong + maxLong) / 2;
     
-    if (isFollowing && currentPosition) {
-        centerLat = currentPosition.lat;
-        centerLong = currentPosition.long;
-    }
-    
-    const zoomLevel = isFollowing ? (padding + maxRange) * 0.5 : padding + maxRange;
+    const zoomLevel = padding + maxRange;
     
     const viewBox = {
         x: centerLong - zoomLevel / 2,
@@ -108,7 +103,7 @@ const SvgMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'>> = (
     };
 
     return (
-        <div className="w-full h-full relative" onPointerDown={handlePointerDown}>
+        <div className="w-full h-full relative">
             <svg ref={svgRef} onClick={handleMapClick} className="w-full h-full cursor-pointer" viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`} preserveAspectRatio="xMidYMid meet">
                 <defs>
                     <pattern id="grid" width={viewBox.width / 20} height={viewBox.width / 20} patternUnits="userSpaceOnUse">
@@ -135,18 +130,12 @@ const SvgMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'>> = (
                 {selectedCoords && <circle cx={selectedCoords.x} cy={selectedCoords.y} r={viewBox.width / 150} fill="white" />}
 
                 {currentPosition && (
-                    <circle cx={currentPosition.long} cy={-currentPosition.lat} r={viewBox.width / 100} fill="#22d3ee" stroke="#111827" strokeWidth={viewBox.width / 300} style={{ filter: 'drop-shadow(0 0 3px #22d3ee)'}}>
-                        <animate attributeName="r" values={`${viewBox.width / 100};${viewBox.width / 80};${viewBox.width / 100}`} dur="1.5s" repeatCount="indefinite" />
-                    </circle>
+                    <g transform={`translate(${currentPosition.long}, ${-currentPosition.lat}) rotate(${heading - 90})`}>
+                       {/* Arrow Marker */}
+                       <path d={`M ${-viewBox.width/150} ${-viewBox.width/150} L ${viewBox.width/80} 0 L ${-viewBox.width/150} ${viewBox.width/150} Z`} fill="#22d3ee" stroke="#111827" strokeWidth={viewBox.width / 500} />
+                    </g>
                 )}
             </svg>
-            <div className="absolute top-2 right-2 z-10">
-                {showControls && (
-                    <button onClick={() => setIsFollowing(!isFollowing)} className={`p-1.5 rounded transition-colors ${isFollowing ? 'bg-cyan-500/30 text-cyan-300' : 'bg-slate-700 text-gray-300 hover:bg-slate-600'}`} aria-label="Follow current position">
-                        <FollowIcon className="w-4 h-4" />
-                    </button>
-                )}
-            </div>
             {selectedPoint && (
                 <div className="absolute p-2 bg-slate-900/80 backdrop-blur-sm rounded-md text-xs text-white border border-cyan-500/50 pointer-events-none" style={{ left: tooltipPosition.x, top: tooltipPosition.y, transform: 'translate(10px, -100%)' }}>
                     <div><span className="font-bold text-cyan-400">Speed:</span> {(selectedPoint.speed_mps / MPS_PER_MPH).toFixed(1)} MPH</div>
@@ -158,9 +147,15 @@ const SvgMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'>> = (
     );
 };
 
-const MapboxMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'> & { mapStyleId: string, isFollowing: boolean, onFollowingChange: (isFollowing: boolean) => void }> = ({ data, currentPosition, startFinishLine, mapStyleId, isFollowing, onFollowingChange }) => {
+const MapboxMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'> & { mapStyleId: string, viewMode: ViewMode, setViewMode: (m: ViewMode) => void, heading: number, accessToken: string }> = ({ data, currentPosition, startFinishLine, mapStyleId, viewMode, setViewMode, heading, accessToken }) => {
     const mapRef = useRef<MapRef>(null);
-    const [viewState, setViewState] = useState({ latitude: data[0]?.position.lat || 0, longitude: data[0]?.position.long || 0, zoom: 15 });
+    const [viewState, setViewState] = useState({ 
+        latitude: currentPosition?.lat || 0, 
+        longitude: currentPosition?.long || 0, 
+        zoom: 16,
+        bearing: 0,
+        pitch: 0
+    });
 
     const pathGeoJson: FeatureCollection = useMemo(() => ({
         type: 'FeatureCollection',
@@ -184,38 +179,60 @@ const MapboxMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'> &
     }, [startFinishLine]);
 
     useEffect(() => {
-        if (isFollowing && currentPosition) {
-            setViewState(v => ({...v, latitude: currentPosition.lat, longitude: currentPosition.long, transitionDuration: 100 }));
+        if (viewMode !== 'free' && currentPosition) {
+            setViewState(v => ({
+                ...v, 
+                latitude: currentPosition.lat, 
+                longitude: currentPosition.long,
+                bearing: viewMode === 'cockpit' ? heading : 0,
+                pitch: viewMode === 'cockpit' ? 60 : 0,
+                zoom: viewMode === 'cockpit' ? 17 : 16,
+                transitionDuration: 300 
+            }));
         }
-    }, [isFollowing, currentPosition]);
+    }, [viewMode, currentPosition, heading]);
 
+    // Initial bounds fit
     useEffect(() => {
-        if (mapRef.current && data.length > 1 && !isFollowing) {
+        if (mapRef.current && data.length > 5 && viewMode === 'free') {
             const lats = data.map(p => p.position.lat);
             const longs = data.map(p => p.position.long);
             const bounds: [number, number, number, number] = [Math.min(...longs), Math.min(...lats), Math.max(...longs), Math.max(...lats)];
-            mapRef.current.fitBounds(bounds, { padding: 40, duration: 1000 });
+            try {
+                mapRef.current.fitBounds(bounds, { padding: 40, duration: 1000 });
+            } catch(e) { /* ignore initial fit error */ }
         }
-    }, [data, isFollowing]);
+    }, [data.length, viewMode]);
 
 
     return (
-        <div className="w-full h-full" onPointerDown={() => onFollowingChange(false)}>
+        <div className="w-full h-full relative group" onPointerDown={() => setViewMode('free')}>
             <Map
                 ref={mapRef}
                 {...viewState}
                 onMove={evt => setViewState(evt.viewState)}
-                mapboxAccessToken={MAPBOX_ACCESS_TOKEN}
+                mapboxAccessToken={accessToken}
                 mapStyle={mapStyleId}
+                pitchWithRotate={true}
+                dragRotate={true}
+                attributionControl={false}
             >
+                {/* Glow Layer */}
                 <Source id="path" type="geojson" data={pathGeoJson}>
                     <Layer
-                        id="path-layer"
+                        id="path-glow"
                         type="line"
-                        paint={{ 'line-color': '#0ea5e9', 'line-width': 3 }}
+                        paint={{ 'line-color': '#00E5FF', 'line-width': 8, 'line-opacity': 0.4, 'line-blur': 4 }}
+                        layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                    />
+                    <Layer
+                        id="path-core"
+                        type="line"
+                        paint={{ 'line-color': '#ffffff', 'line-width': 3 }}
                         layout={{ 'line-join': 'round', 'line-cap': 'round' }}
                     />
                 </Source>
+                
                 {startFinishGeoJson && (
                     <Source id="start-finish" type="geojson" data={startFinishGeoJson}>
                         <Layer
@@ -225,12 +242,53 @@ const MapboxMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'> &
                         />
                     </Source>
                 )}
+
+                {/* Start/Finish Markers */}
+                {startFinishLine && (
+                    <>
+                        <Marker longitude={startFinishLine.p1.long} latitude={startFinishLine.p1.lat} anchor="center">
+                            <FlagIcon className="w-5 h-5 text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+                        </Marker>
+                        <Marker longitude={startFinishLine.p2.long} latitude={startFinishLine.p2.lat} anchor="center">
+                            <FlagIcon className="w-5 h-5 text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+                        </Marker>
+                    </>
+                )}
+                
                 {currentPosition && (
-                    <Marker longitude={currentPosition.long} latitude={currentPosition.lat}>
-                        <div className="w-4 h-4 rounded-full bg-cyan-400 border-2 border-slate-900 shadow-lg animate-pulse" />
+                    <Marker longitude={currentPosition.long} latitude={currentPosition.lat} anchor="center">
+                        <div style={{ transform: `rotate(${heading}deg)`, transition: 'transform 0.1s linear' }}>
+                            <NavigationIcon className="w-8 h-8 text-cyan-400 drop-shadow-[0_0_5px_rgba(0,0,0,0.8)]" style={{ filter: 'drop-shadow(0 0 8px cyan)' }} />
+                        </div>
                     </Marker>
                 )}
             </Map>
+            
+            {/* View Mode Controls - Visible on Hover */}
+            <div className="absolute top-2 left-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <button 
+                    onClick={(e) => { e.stopPropagation(); setViewMode('follow'); }} 
+                    className={`p-1.5 rounded transition-all shadow-lg backdrop-blur-sm ${viewMode === 'follow' ? 'bg-cyan-500 text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
+                    title="North Up"
+                >
+                    <CompassIcon className="w-5 h-5" />
+                </button>
+                <button 
+                    onClick={(e) => { e.stopPropagation(); setViewMode('cockpit'); }} 
+                    className={`p-1.5 rounded transition-all shadow-lg backdrop-blur-sm ${viewMode === 'cockpit' ? 'bg-cyan-500 text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
+                    title="Cockpit View"
+                >
+                    <NavigationIcon className="w-5 h-5" />
+                </button>
+                {viewMode === 'free' && (
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); setViewMode('follow'); }}
+                        className="mt-1 bg-red-500/80 hover:bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg backdrop-blur-sm animate-in fade-in"
+                    >
+                        RECENTER
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
@@ -238,16 +296,25 @@ const MapboxMap: React.FC<Omit<RaceMapProps, 'className' | 'onSetStartFinish'> &
 // --- Main Component ---
 
 export const RaceMap: React.FC<RaceMapProps> = ({ data, currentPosition, className = '', showControls = false, onSetStartFinish, startFinishLine }) => {
-    const [mapStyle, setMapStyle] = useState<MapStyle>('telemetry');
-    const [isFollowing, setIsFollowing] = useState(true);
+    const [mapStyle, setMapStyle] = useState<MapStyle>('street'); // Default to street for better visibility in cockpit
+    const [viewMode, setViewMode] = useState<ViewMode>('follow');
+    const [token, setToken] = useState(MAPBOX_ACCESS_TOKEN);
 
-    const isMapboxEnabled = useMemo(() => MAPBOX_ACCESS_TOKEN && MAPBOX_ACCESS_TOKEN !== 'YOUR_MAPBOX_ACCESS_TOKEN', []);
+    useEffect(() => {
+        const stored = localStorage.getItem('mapbox_token');
+        if (stored) setToken(stored);
+    }, []);
+
+    const isMapboxEnabled = useMemo(() => token && token !== 'YOUR_MAPBOX_ACCESS_TOKEN', [token]);
+    
+    // Derived Heading
+    const heading = data.length > 0 ? data[data.length - 1].heading : 0;
 
     if (data.length < 2 && !startFinishLine) {
         const selectedStyle = styleConfig[mapStyle];
         return (
             <div className={`flex items-center justify-center w-full h-full rounded-lg ${selectedStyle.bg} ${className}`}>
-                <p className={`${selectedStyle.textColor} text-sm`}>Awaiting path data...</p>
+                <p className={`${selectedStyle.textColor} text-sm font-orbitron opacity-70`}>Awaiting telemetry...</p>
             </div>
         );
     }
@@ -255,29 +322,20 @@ export const RaceMap: React.FC<RaceMapProps> = ({ data, currentPosition, classNa
     const selectedStyle = styleConfig[mapStyle];
 
     return (
-        <div className={`relative w-full h-full rounded-lg overflow-hidden ${selectedStyle.bg} ${className}`}>
-            <div className="absolute top-2 right-2 z-10 bg-slate-900/50 backdrop-blur-sm p-1 rounded-md flex items-center space-x-1">
+        <div className={`relative w-full h-full rounded-lg overflow-hidden ${selectedStyle.bg} ${className} group`}>
+            
+            {/* Style Switcher & Actions */}
+            <div className="absolute top-2 right-2 z-10 bg-slate-900/50 backdrop-blur-sm p-1 rounded-md flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 {showControls && (
-                    <>
-                        <button
-                            onClick={onSetStartFinish}
-                            className="p-1.5 rounded transition-colors bg-slate-700 text-gray-300 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="Set Start/Finish Line"
-                            title="Set Start/Finish Line"
-                            disabled={!currentPosition || !data.length}
-                        >
-                            <FlagIcon className="w-4 h-4" />
-                        </button>
-                        {mapStyle !== 'telemetry' && (
-                             <button
-                                onClick={() => setIsFollowing(!isFollowing)}
-                                className={`p-1.5 rounded transition-colors ${isFollowing ? 'bg-cyan-500/30 text-cyan-300' : 'bg-slate-700 text-gray-300 hover:bg-slate-600'}`}
-                                aria-label="Follow current position"
-                             >
-                                <FollowIcon className="w-4 h-4" />
-                            </button>
-                        )}
-                    </>
+                    <button
+                        onClick={onSetStartFinish}
+                        className="p-1.5 rounded transition-colors bg-slate-700 text-gray-300 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label="Set Start/Finish Line"
+                        title="Set Start/Finish Line"
+                        disabled={!currentPosition || !data.length}
+                    >
+                        <FlagIcon className="w-4 h-4" />
+                    </button>
                 )}
                 {(Object.keys(styleConfig) as MapStyle[]).map((style) => (
                     <button
@@ -293,9 +351,18 @@ export const RaceMap: React.FC<RaceMapProps> = ({ data, currentPosition, classNa
             </div>
             
             {mapStyle === 'telemetry' ? (
-                <SvgMap data={data} currentPosition={currentPosition} showControls={showControls} startFinishLine={startFinishLine} />
+                <SvgMap data={data} currentPosition={currentPosition} showControls={showControls} startFinishLine={startFinishLine} heading={heading} />
             ) : (
-                isMapboxEnabled && <MapboxMap data={data} currentPosition={currentPosition} startFinishLine={startFinishLine} mapStyleId={selectedStyle.mapboxStyle!} isFollowing={isFollowing} onFollowingChange={setIsFollowing} showControls={showControls} />
+                isMapboxEnabled && <MapboxMap 
+                    data={data} 
+                    currentPosition={currentPosition} 
+                    startFinishLine={startFinishLine} 
+                    mapStyleId={selectedStyle.mapboxStyle!} 
+                    viewMode={viewMode}
+                    setViewMode={setViewMode}
+                    heading={heading}
+                    accessToken={token}
+                />
             )}
         </div>
     );
