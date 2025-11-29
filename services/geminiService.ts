@@ -23,7 +23,8 @@ export async function getCoachingAdvice(runSummary: RunSummary): Promise<string>
     return "AI coaching is disabled. Please configure your Gemini API key.";
   }
   
-  const model = 'gemini-2.5-pro';
+  // Use Gemini 3 Pro for complex post-session analysis
+  const model = 'gemini-3-pro-preview';
   
   const { zeroToSixty, quarterMileTime, quarterMileSpeed, maxGForce, fullData, laps } = runSummary;
 
@@ -46,7 +47,7 @@ Run Data:
 - Initial Speed Profile (first ~2.5s in MPH): ${speedProfile}
 - ${lapSummary}
 
-Based on this data, provide specific, data-driven feedback.
+Based on the data, provide specific, data-driven feedback.
 - If lap times are inconsistent, comment on what could cause this (e.g., different braking points, inconsistent cornering lines).
 - If it's a drag run (no laps), focus on the launch and acceleration curve.
 - For example: "Your best lap was over a second faster than your others. This indicates you have the pace, but need to improve consistency. Looking at the map, on your fastest lap, you took a wider entry into the hairpin which allowed for a better exit speed. Try to replicate that line on every lap."
@@ -62,10 +63,10 @@ Provide the feedback in plain text, without using markdown formatting like heade
       config: {
         temperature: 0.8,
         topP: 0.95,
-        thinkingConfig: { thinkingBudget: 32768 }
+        thinkingConfig: { thinkingBudget: 16384 } // Use thinking for deep analysis of the run
       }
     });
-    return response.text;
+    return response.text || "No advice generated.";
   } catch (error) {
     console.error("Error calling Gemini API:", error);
     return "There was an error analyzing your run data. Please try again later.";
@@ -112,7 +113,7 @@ Provide only the spoken phrase.
         temperature: 0.7,
       }
     });
-    return response.text.trim();
+    return response.text ? response.text.trim() : "";
   } catch (error) {
     console.error("Error calling Gemini API for real-time tip:", error);
     return ""; // Return empty on error to not interrupt driver
@@ -146,7 +147,7 @@ export async function getGroundedResponse(question: string, position: { lat: num
       },
     });
 
-    const text = response.text;
+    const text = response.text || "I found some information.";
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
     return { text, chunks };
@@ -165,7 +166,8 @@ export async function getGroundedResponse(question: string, position: { lat: num
 export async function diagnoseFaultCodes(dtcs: string[], vehicleContext: string = "Generic Performance Vehicle"): Promise<string> {
     if (!API_KEY) return "AI Diagnosis is disabled. Check API Key.";
 
-    const model = 'gemini-1.5-pro'; // Use 1.5 Pro for complex reasoning
+    // Use Gemini 3 Pro for complex causal reasoning of mechanical faults
+    const model = 'gemini-3-pro-preview'; 
 
     const prompt = `
       You are the 'CartelWorx' Master Diagnostic AI.
@@ -193,9 +195,12 @@ export async function diagnoseFaultCodes(dtcs: string[], vehicleContext: string 
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
-            config: { temperature: 0.4 }
+            config: { 
+                thinkingConfig: { thinkingBudget: 16384 },
+                temperature: 0.4 
+            }
         });
-        return response.text;
+        return response.text || "Diagnosis generation returned no text.";
     } catch (e) {
         console.error("Diagnosis failed", e);
         return "Failed to generate diagnosis. Please try again.";

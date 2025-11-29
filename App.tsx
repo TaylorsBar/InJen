@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { VideoOverlay } from './components/VideoOverlay';
@@ -227,10 +228,11 @@ const App: React.FC = () => {
     return <FullscreenHud telemetryData={telemetryData} livePath={livePath} onExit={handleExitHud} />;
   }
 
-  const NavButton = ({ view, icon, active }: { view: View, icon: React.ReactNode, active: boolean }) => (
+  const NavButton = ({ view, icon, active, label }: { view: View, icon: React.ReactNode, active: boolean, label?: string }) => (
       <button
         onClick={() => setActiveView(view)}
-        className={`relative p-2.5 rounded-xl transition-all duration-300 group ${active 
+        title={label}
+        className={`relative p-2 sm:p-2.5 rounded-xl transition-all duration-300 group shrink-0 ${active 
             ? `${theme.colors.bg} text-white shadow-[0_0_15px_rgba(255,255,255,0.1)] border border-white/20` 
             : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
       >
@@ -272,31 +274,34 @@ const App: React.FC = () => {
         )}
 
         {/* Floating Command Bar (Header) */}
-        <header className="relative z-30 flex items-center justify-between px-2 py-3 w-full shrink-0">
-          <div className="flex items-center">
-            <BrandLogoIcon className={`w-32 sm:w-40 h-auto drop-shadow-2xl ${theme.colors.icon}`} />
+        <header className="relative z-30 flex items-center justify-between px-2 sm:px-3 py-3 w-full shrink-0 gap-2">
+          {/* Logo Section */}
+          <div className="flex items-center shrink-0">
+            <BrandLogoIcon className={`w-28 sm:w-40 h-auto drop-shadow-2xl ${theme.colors.icon}`} />
           </div>
           
-          <div className={`flex items-center gap-1 sm:gap-2 glass-pane rounded-2xl p-1.5 border ${theme.colors.border} shadow-2xl backdrop-blur-xl`}>
-            <div className="flex items-center">
+          {/* Nav Section */}
+          <div className={`flex items-center gap-1 sm:gap-2 glass-pane rounded-2xl p-1.5 border ${theme.colors.border} shadow-2xl backdrop-blur-xl overflow-x-auto max-w-full`} style={{ scrollbarWidth: 'none' }}>
+            <div className="flex items-center shrink-0">
                 {isLandscape && manualOverride && (
                     <button
                         onClick={() => setManualOverride(false)}
-                        className={`p-2.5 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 animate-pulse mr-2`}
+                        className={`p-2 sm:p-2.5 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 animate-pulse mr-2 shrink-0`}
+                        title="Return to HUD"
                     >
                         <HudIcon className="w-5 h-5" />
                     </button>
                 )}
-                <NavButton view="dashboard" icon={<DashboardIcon className="w-5 h-5" />} active={activeView === 'dashboard'} />
-                <NavButton view="racedash" icon={<RaceDashIcon className="w-5 h-5" />} active={activeView === 'racedash'} />
-                <NavButton view="evodash" icon={<EvoIcon className="w-5 h-5" />} active={activeView === 'evodash'} />
-                <NavButton view="history" icon={<HistoryIcon className="w-5 h-5" />} active={activeView === 'history'} />
-                <NavButton view="chat" icon={<ChatIcon className="w-5 h-5" />} active={activeView === 'chat'} />
+                <NavButton view="dashboard" icon={<DashboardIcon className="w-5 h-5" />} active={activeView === 'dashboard'} label="Dashboard" />
+                <NavButton view="racedash" icon={<RaceDashIcon className="w-5 h-5" />} active={activeView === 'racedash'} label="Race Dash" />
+                <NavButton view="evodash" icon={<EvoIcon className="w-5 h-5" />} active={activeView === 'evodash'} label="Evo Dash" />
+                <NavButton view="history" icon={<HistoryIcon className="w-5 h-5" />} active={activeView === 'history'} label="History" />
+                <NavButton view="chat" icon={<ChatIcon className="w-5 h-5" />} active={activeView === 'chat'} label="AI Chat" />
             </div>
             
-            <div className="w-px h-6 bg-white/10 mx-1"></div>
+            <div className="w-px h-6 bg-white/10 mx-1 shrink-0"></div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
                 <RecordingControl
                     status={recordingStatus}
                     timer={recordingTimer}
@@ -311,7 +316,8 @@ const App: React.FC = () => {
                 />
                 <button
                     onClick={() => setShowTools(true)}
-                    className="p-2.5 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition-all duration-300"
+                    className="p-2 sm:p-2.5 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition-all duration-300 shrink-0"
+                    title="Settings"
                 >
                     <SettingsIcon className="w-5 h-5" />
                 </button>
